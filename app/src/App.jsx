@@ -6,6 +6,9 @@ import { api, bootstrapSession, getUser, logout as clearSession, subscribeSessio
 import AccountsAccess from './accounts/AccountsAccess.jsx'
 import ProductionDashboard from './viewer/ProductionDashboard.jsx'
 import WorkflowHeader from './shared/WorkflowHeader.jsx'
+import WorkspaceIcon from './shared/WorkspaceIcon.jsx'
+import { useDialogFocus } from './shared/useDialogFocus.js'
+import HomePage from './home/HomePage.jsx'
 import { canManageUsers, isContentAdmin } from './shared/access.js'
 import { useQueryClient } from '@tanstack/react-query'
 import AccountLinkPage from './accounts/AccountLinkPage.jsx'
@@ -17,6 +20,7 @@ import './meeting-dashboard.css'
 import './overlay-drawer.css'
 import './reference-dashboard.css'
 import './records-explorer.css'
+import './workspace-shell.css'
 
 const records = [
   ['၀၉ စက်တင်ဘာ ၂၀၂၆','ဘဏ္ဍာရေးဌာန','FIN-2609-041','နှစ်ကုန်ဘတ်ဂျက်သုံးသပ်ချက်','ဘတ်ဂျက်','ဆောင်ရွက်ရန်ကျန်','September_Report.xlsx'],
@@ -48,12 +52,14 @@ function WorkspaceApp(){
   const [presentation,setPresentation]=useState(false)
   const [categoryFilter,setCategoryFilter]=useState(null)
   const [collectionFilter,setCollectionFilter]=useState(null)
+  const [drawerOpen,setDrawerOpen]=useState(false)
+  const drawer=useDialogFocus(drawerOpen,()=>setDrawerOpen(false))
   const filtered=useMemo(()=>records.filter(r=>r.join(' ').toLowerCase().includes(search.toLowerCase())),[search])
   const enter=()=>{setPresentation(true);document.documentElement.requestFullscreen?.().catch(()=>{})}
   const leave=()=>{document.exitFullscreen?.().catch(()=>{});setPresentation(false);setPage('dashboard');window.history.pushState({},'', '/dashboard')}
-  const choosePage=(id)=>{setPresentation(false);setPage(id);window.history.pushState({},'',id==='dashboard'?'/dashboard':id==='preview'?'/dashboard/demo':`/manage/${id}`)}
+  const choosePage=(id)=>{setDrawerOpen(false);setPresentation(false);setPage(id);window.history.pushState({},'',id==='dashboard'?'/dashboard':id==='preview'?'/dashboard/demo':`/manage/${id}`)}
   const notifyTarget=notice=>{setTarget(notice);choosePage('dashboard')}
-  const navItems=(items)=>items.filter(([id])=>!['accounts','preview'].includes(id)||canManageUsers(user)).map(([id,label,icon])=><button className={page===id?'active':''} onClick={()=>choosePage(id)} key={id} title={label}><em>{icon}</em><span className="nav-label">{label}</span></button>)
+  const navItems=(items)=>items.filter(([id])=>!['accounts','preview'].includes(id)||canManageUsers(user)).map(([id,label])=><button className={page===id?'active':''} onClick={()=>choosePage(id)} key={id} title={label}><em><WorkspaceIcon name={id}/></em><span className="nav-label">{label}</span></button>)
   useEffect(()=>{let active=true;bootstrapSession().then(next=>{if(active)setUser(next)}).finally(()=>{if(active)setCheckingSession(false)});return()=>{active=false}},[])
   useEffect(()=>subscribeSessionExpired(()=>{queryClient.clear();setUser(null)}),[queryClient])
   useEffect(()=>{const change=()=>{const path=window.location.pathname;setPage(path==='/dashboard/demo'?'preview':path.startsWith('/manage/')?path.split('/')[2]:'dashboard')};window.addEventListener('popstate',change);return()=>window.removeEventListener('popstate',change)},[])
@@ -66,21 +72,22 @@ function WorkspaceApp(){
   if(['accounts','preview'].includes(page)&&!canManageUsers(user))return <main className="workflow-dashboard"><p role="alert">ဤ page ကို ဝင်ရောက်ခွင့်မရှိပါ။</p><button onClick={()=>choosePage('dashboard')}>Open Dashboard</button></main>
   if(presentation||page==='preview')return referenceAllowed?<><div className="demo-reference-label">Demo / Design Reference — sample values only <button onClick={leave}>Back to Dashboard</button></div><Dashboard published={published} onBack={leave}/></>:referenceError?<p role="alert">{referenceError} <button onClick={leave}>Back to Dashboard</button></p>:<p role="status">Checking reference access…</p>
   if(page==='dashboard')return <ProductionDashboard user={user} onLogout={signOut} onBack={()=>choosePage('categories')} target={target}/>
-  return <div className="app drawer-shell">
-    <aside className="temporary-drawer" aria-label="ပင်မလမ်းညွှန်">
-      <div className="drawer-brand"><div className="drawer-mark">▤</div><div className="drawer-brand-copy"><b>အစိုးရရုံး အချက်အလက်စနစ်</b><small>Government Data Management System</small></div></div>
+  return <div className={`app drawer-shell${drawerOpen?' drawer-is-open':''}`}>
+    <button className="drawer-backdrop" aria-label="Close navigation" tabIndex={-1} onClick={()=>setDrawerOpen(false)}/>
+    <aside ref={drawer} tabIndex={-1} className="temporary-drawer" aria-label="ပင်မလမ်းညွှန်" role={drawerOpen?'dialog':undefined} aria-modal={drawerOpen?true:undefined} onTransitionEnd={event=>{if(drawerOpen&&event.target===event.currentTarget&&event.propertyName==='transform'&&!event.currentTarget.contains(document.activeElement))event.currentTarget.querySelector('.drawer-close')?.focus()}}>
+      <div className="drawer-brand"><div className="drawer-mark"><img src="/branding/central-data-dep.png" alt="Central Data Department logo"/></div><div className="drawer-brand-copy"><b>Central Data<br/>Department</b></div><button className="drawer-close" aria-label="Close navigation" onClick={()=>setDrawerOpen(false)}><WorkspaceIcon name="close"/></button></div>
       <div className="drawer-nav-groups">
         <div className="drawer-section"><span className="drawer-section-title">အနှစ်ချုပ်</span><nav>{navItems(nav.slice(0,1))}</nav></div>
         <div className="drawer-section"><span className="drawer-section-title">ဒေတာစီမံခန့်ခွဲမှု</span><nav>{navItems(nav.slice(1,3))}</nav></div>
         <div className="drawer-section"><span className="drawer-section-title">စနစ်စီမံခန့်ခွဲမှု</span><nav>{navItems(nav.slice(3,6))}</nav></div>
       </div>
-      <div className="side-foot"><button onClick={()=>{setUser(null);void clearSession()}} title="Logout"><em>↩</em><span className="foot-label">Logout</span></button><small>ဗားရှင်း 1.0.0<br/>© ၂၀၂၆ အစိုးရ အချက်အလက်စနစ်</small></div>
+      <div className="side-foot"><button onClick={signOut} title="Logout"><em><WorkspaceIcon name="logout"/></em><span className="foot-label">Logout</span></button></div>
     </aside>
     <main className="main">
-      <header className="workspace-header"><div className="header-page-title"><span>{nav.find(n=>n[0]===page)?.[1]}</span></div><WorkflowHeader user={user} onLogout={signOut} onTarget={notifyTarget}/></header>
-      {!['entry','categories','accounts','dashboard'].includes(page)&&<div className="page-context"><small>Workspace / {nav.find(n=>n[0]===page)?.[1]}</small><h2>{nav.find(n=>n[0]===page)?.[1]}</h2></div>}
+      <header className="workspace-header"><div className="header-page-title"><button className="drawer-toggle" aria-label="Open navigation" aria-expanded={drawerOpen} onClick={()=>setDrawerOpen(true)}><WorkspaceIcon name="menu"/></button><span>{page==='overview'?'Home':nav.find(n=>n[0]===page)?.[1]}</span></div><WorkflowHeader user={user} onLogout={signOut} onTarget={notifyTarget}/></header>
+      {!['entry','categories','accounts','dashboard','overview'].includes(page)&&<div className="page-context"><small>Workspace / {nav.find(n=>n[0]===page)?.[1]}</small><h2>{nav.find(n=>n[0]===page)?.[1]}</h2></div>}
       {page==='dashboard'&&<ProductionDashboard embedded user={user} onLogout={signOut} target={target}/>}
-      {page==='overview'&&<Overview go={setPage}/>}
+      {page==='overview'&&<HomePage/>}
       {page==='categories'&&<Categories onViewData={(categoryId,collectionId)=>{setCategoryFilter(categoryId);setCollectionFilter(collectionId);setPage('entry')}}/>}
       {page==='entry'&&<DataRecordsPage categoryId={categoryFilter} dataCollectionId={collectionFilter} onOpenCollection={setCollectionFilter} onClearCollection={()=>setCollectionFilter(null)}/>} {page==='activity'&&<Activity/>}
       {page==='accounts'&&<AccountsAccess user={user}/>} {page==='preview'&&<Preview published={published} setPublished={setPublished} open={enter}/>}

@@ -99,7 +99,7 @@ export default function ProductionDashboard({ user, onLogout, onBack, embedded =
   return <main className="workflow-dashboard central-data-dashboard">
     <header className="central-data-banner">
       <span className="central-data-emblem"><img src="/branding/state-emblem.png" alt="ပြည်ထောင်စုသမ္မတမြန်မာနိုင်ငံတော် အမှတ်တံဆိပ်" /></span>
-      <div className="central-data-heading"><h1>ဗဟိုအချက်အလက်စုဆောင်းထိန်းသိမ်းရေးဌာနကြီး</h1><p>Central Data Dep</p></div>
+      <div className="central-data-heading"><h1>ဗဟိုအချက်အလက်စုဆောင်းထိန်းသိမ်းရေးဌာနကြီး</h1><p>Central Data Department</p></div>
       <span className="central-data-logo"><img src="/branding/central-data-dep.png" alt="ဗဟိုအချက်အလက်စုဆောင်းထိန်းသိမ်းရေးဌာနကြီး" /></span>
     </header>
     <div className="central-data-utilities"><div className="central-data-account-row">{!embedded && <WorkflowHeader dashboard user={user} onLogout={onLogout} onTarget={openTarget} onBack={goBack} backDisabled={!onBack && !folderId && !collectionId && !search} searchControl={<form className="central-data-search" onSubmit={event => { event.preventDefault(); setSearch(draft.trim()); setFolderId(''); setCollectionId('') }}><input aria-label="အမည်ဖြင့်ရှာဖွေရန်" value={draft} onChange={event => setDraft(event.target.value)} placeholder="အမည်ဖြင့်ရှာဖွေရန်..." /><button aria-label="ရှာဖွေရန်" title="ရှာဖွေရန်"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></svg></button></form>} />}</div></div>

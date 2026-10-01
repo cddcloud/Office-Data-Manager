@@ -8,8 +8,13 @@ export function useDialogFocus(open, onClose) {
     if (!open || !dialog.current) return
     const previous = document.activeElement
     const panel = dialog.current
-    const controls = () => [...panel.querySelectorAll('button:not(:disabled), a[href], input, select, textarea, [tabindex="0"]')]
-    ;(controls()[0] || panel).focus()
+    const controls = () => [...panel.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]:not(:disabled)')]
+    const initial = panel.querySelector('[data-dialog-autofocus]') || controls()[0] || panel
+    initial.focus()
+    // An opening drawer can still be hidden while its first style frame is applied.
+    const focusFrame = requestAnimationFrame(() => {
+      if (!panel.contains(document.activeElement)) initial.focus()
+    })
     const keydown = event => {
       if (event.key === 'Escape') { event.preventDefault(); close.current() }
       if (event.key !== 'Tab') return
@@ -19,7 +24,7 @@ export function useDialogFocus(open, onClose) {
       else if (!event.shiftKey && document.activeElement === items.at(-1)) { event.preventDefault(); items[0].focus() }
     }
     panel.addEventListener('keydown', keydown)
-    return () => { panel.removeEventListener('keydown', keydown); if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
+    return () => { cancelAnimationFrame(focusFrame); panel.removeEventListener('keydown', keydown); if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
   }, [open])
   return dialog
 }

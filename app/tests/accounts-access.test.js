@@ -39,7 +39,7 @@ describe('User & Access acceptance UI', () => {
 
   it('keeps Search, Role, Status, and Add Account in one desktop toolbar', () => {
     const toolbar = source.slice(source.indexOf('<div className="accounts-toolbar account-filter-toolbar">'), source.indexOf('</div>\n      {loading ?'))
-    for (const item of ['Search users...', 'Filter by clearance', 'Filter by status', 'Add Viewer']) expect(toolbar).toContain(item)
+    for (const item of ['Search users...', 'Filter by level', 'Filter by status', '<span>Add</span>']) expect(toolbar).toContain(item)
     expect(source).not.toContain('accounts-top-actions')
     expect(enhancementCss).toContain('width:400px')
     expect(enhancementCss).toContain('.account-toolbar-add{margin-left:auto')
@@ -50,7 +50,7 @@ describe('User & Access acceptance UI', () => {
     expect(addDialog).toContain('title="Add Account"')
     expect(addDialog).toContain('Full Name')
     expect(addDialog).toContain('Email Address')
-    expect(addDialog).toContain('submitLabel="Add Account"')
+    expect(addDialog).toContain('submitLabel="Add"')
     expect(addDialog).toContain('<RoleOptions')
     expect(addDialog).not.toContain('type="password"')
     expect(source).not.toContain('secure one-time setup link')
@@ -65,13 +65,15 @@ describe('User & Access acceptance UI', () => {
 
   it('limits each row action menu to the approved lifecycle actions', () => {
     expect(accountActionItems({ status: 'ACTIVE', kind: 'USER' })).toEqual(['Reset Login', 'Deactivate'])
-    expect(accountActionItems({ status: 'DISABLED', kind: 'USER' })).toEqual(['Reactivate'])
+    expect(accountActionItems({ status: 'DISABLED', kind: 'USER' })).toEqual([])
     expect(accountActionItems({ status: 'SETUP_REQUIRED', kind: 'INVITATION' })).toEqual([])
     expect(accountActionItems({ status: 'ACTIVE', kind: 'USER', isPrimaryAdmin: true })).toEqual([])
     const actionsSource = source.slice(source.indexOf('function AccountActions'), source.indexOf('function AccountDialog'))
     expect(actionsSource).not.toContain('Change Access')
     expect(actionsSource).not.toContain('Generate New Setup Link')
-    expect(actionsSource).not.toContain('Cancel Invitation')
+    expect(actionsSource).not.toContain('Reactivate')
+    expect(actionsSource).not.toContain('Regenerate link')
+    expect(actionsSource).not.toContain('Cancel invitation')
     expect(source).toContain('Deactivate this user?')
     expect(source).toContain('will be signed out and cannot log in until this account is reactivated.')
   })
@@ -103,7 +105,7 @@ describe('User & Access acceptance UI', () => {
     expect(action).toHaveBeenCalledOnce()
     expect(setOpen.mock.invocationCallOrder[0]).toBeLessThan(action.mock.invocationCallOrder[0])
     const actionsSource = source.slice(source.indexOf('function AccountActions'), source.indexOf('function AccountDialog'))
-    expect(actionsSource.match(/run\(on(?:Reset|Deactivate|Reactivate)\)/g)).toHaveLength(3)
+    expect(actionsSource.match(/run\(on(?:Reset|Deactivate)\)/g)).toHaveLength(2)
   })
 
   it('validates setup and reset tokens through POST bodies and removes them from browser history', () => {

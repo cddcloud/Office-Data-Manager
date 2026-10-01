@@ -8,14 +8,14 @@ const appSource = fs.readFileSync(path.resolve(process.cwd(), 'src/App.jsx'), 'u
 describe('Admin navigation', () => {
   it('uses the final visible drawer labels in order', () => {
     const labels = adminNavigation.map(([, label]) => label)
-    expect(labels).toEqual(['Home Page', 'File Manager', 'ဒေတာများ', 'User & Access', 'Dashboard', 'Demo / Design Reference'])
+    expect(labels).toEqual(['Home Page', 'File Manager', 'Data', 'User & Access', 'Dashboard', 'Demo / Design Reference'])
     expect(labels).not.toContain('လုပ်ဆောင်ချက်မှတ်တမ်း')
   })
 
   it('removes Settings, labels server-backed sign-out Logout, and suppresses duplicate account context', () => {
-    const shell = appSource.slice(appSource.indexOf('return <div className="app drawer-shell">'), appSource.indexOf("{page==='overview'"))
+    const shell = appSource.slice(appSource.indexOf('return <div className={`app drawer-shell'), appSource.indexOf("{page==='overview'&&"))
     expect(shell).not.toContain('စနစ်ဆက်တင်များ')
     expect(shell).toContain('<span className="foot-label">Logout</span>')
-    expect(shell).toContain("!['entry','categories','accounts','dashboard'].includes(page)")
+    expect(shell).toContain("!['entry','categories','accounts','dashboard','overview'].includes(page)")
   })
 })

@@ -1,0 +1,160 @@
+.accounts-reference {
+  min-height: calc(100vh - 72px);
+  padding: 22px 24px 32px;
+  background: #f3f8ff;
+  color: #15294d;
+}
+.accounts-reference .account-summary-grid { gap: 16px; margin-bottom: 18px; }
+.accounts-reference .account-summary {
+  min-height: 112px;
+  padding: 22px 28px;
+  border: 1px solid #e0eaf7;
+  border-radius: 8px;
+  box-shadow: 0 2px 7px #23588504;
+}
+.accounts-reference .account-summary div { gap: 10px; }
+.accounts-reference .account-summary small { font-size: 14px; font-weight: 600; color: #4b648c; }
+.accounts-reference .account-summary strong { font-size: 34px; font-weight: 700; color: #101843; line-height: 1.1; }
+.accounts-reference .workflow-root-tabs { gap: 6px; margin: 0; padding: 0; border: 0; }
+.accounts-reference .workflow-root-tabs button {
+  min-width: 124px;
+  min-height: 46px;
+  padding: 10px 24px;
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: #eaf0f8;
+  color: #182b52;
+  font-size: 14px;
+  font-weight: 600;
+}
+.accounts-reference .workflow-root-tabs button.active { background: #087cf0; color: #fff; box-shadow: 0 3px 9px #087cf018; }
+.accounts-reference .accounts-panel { border-color: #e2eaf5; border-radius: 0 7px 7px 7px; box-shadow: 0 2px 8px #28588003; }
+.accounts-reference .account-filter-toolbar { min-height: 92px; padding: 18px; gap: 14px; border-bottom: 0; }
+.accounts-reference .account-search {
+  width: 360px !important;
+  max-width: 38%;
+  height: 48px !important;
+  padding: 0 14px !important;
+  border-color: #d4e0f1;
+  border-radius: 7px;
+}
+.accounts-reference .account-search svg { width: 20px; height: 20px; color: #4d6b95; }
+.accounts-reference .account-search input { height: 100%; font-size: 14px; color: #243e66; background: transparent; }
+.accounts-reference .account-search input::placeholder { color: #61799f; opacity: 1; }
+.accounts-reference .account-search:focus-within { outline: 2px solid #087cf0; outline-offset: 2px; }
+.accounts-reference .account-filters { gap: 12px; }
+.accounts-reference .account-filters select { width: 174px; height: 48px; padding: 0 14px; color: #2c476e; font-size: 14px; }
+.accounts-reference .account-toolbar-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 124px;
+  min-height: 48px;
+  border-radius: 7px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 3px 8px #087cf014;
+}
+.accounts-reference .accounts-primary:hover { background: #006bcf !important; }
+.accounts-reference table { min-width: 1020px; table-layout: fixed; }
+.accounts-reference th { padding: 15px 16px; background: #f2f6fb; color: #334e78; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.accounts-reference td { height: 72px; padding: 12px 16px; font-size: 13.5px; color: #4c638b; border-color: #e7edf6; }
+.accounts-reference th:first-child, .accounts-reference td:first-child { width: 5%; text-align: center; }
+.accounts-reference th:nth-child(2), .accounts-reference td:nth-child(2) { width: 29%; }
+.accounts-reference th:nth-child(3), .accounts-reference td:nth-child(3) { width: 14%; }
+.accounts-reference th:nth-child(4), .accounts-reference td:nth-child(4) { width: 10%; }
+.accounts-reference th:nth-child(5), .accounts-reference td:nth-child(5) { width: 15%; }
+.accounts-reference th:nth-child(6), .accounts-reference td:nth-child(6) { width: 20%; }
+.accounts-reference th:last-child, .accounts-reference td:last-child { width: 7%; text-align: center; }
+.accounts-reference .account-person { gap: 15px; }
+.accounts-reference .account-person > span { width: 44px; height: 44px; flex-shrink: 0; background: #e2f0ff; color: #087cf0; font-size: 16px; font-weight: 600; }
+.accounts-reference .account-person > div { min-width: 0; gap: 3px; }
+.accounts-reference .account-person b { display: block; font-size: 14px; font-weight: 600; color: #141f45; line-height: 1.6; white-space: normal; overflow-wrap: anywhere; }
+.accounts-reference .account-person small { font-size: 12.5px; color: #56709a; line-height: 1.6; white-space: normal; overflow-wrap: anywhere; }
+.accounts-reference .account-avatar.tone-2 { background: #ddf7ee; color: #09956b; }
+.accounts-reference .account-avatar.tone-3 { background: #ffe6eb; color: #bb3551; }
+.accounts-reference .account-avatar.tone-4 { background: #fff0c9; color: #93620c; }
+.accounts-reference .access-chip, .accounts-reference .workflow-chip {
+  min-height: 29px;
+  padding: 5px 11px;
+  border: 1px solid #accfee;
+  border-radius: 6px;
+  background: #e7f2ff;
+  color: #075f9f;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.accounts-reference .access-chip.primary-admin { color: #8b5200; background: #fff1c9; border-color: #ebca78; }
+.accounts-reference .access-chip.admin { color: #6330a9; background: #f0e7ff; border-color: #d5baf2; }
+.accounts-reference .account-status { align-items: center; gap: 8px; padding: 5px 11px; border: 1px solid #b7c9e1; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.accounts-reference .account-status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.accounts-reference .account-status.active { color: #00734f; background: #ddf8ec; border-color: #9ddbbe; }
+.accounts-reference .account-status.reset_required { color: #425d80; background: #edf3fc; border-color: #b7c9e1; }
+.accounts-reference .account-status.disabled { color: #aa3046; background: #fff0f3; border-color: #e8b0bb; }
+.accounts-reference .account-status.setup_required, .accounts-reference .account-status.expired { color: #895900; background: #fff3d6; border-color: #e8ca88; }
+.accounts-reference .no-actions { font-size: 14px; font-weight: 500; color: #5b7090; }
+.accounts-reference .account-kebab { display: grid; place-items: center; width: 38px; height: 38px; padding: 0; background: #fff; color: #315884; border: 1px solid #d0dff0; border-radius: 6px; }
+.accounts-reference .account-kebab svg { width: 20px; height: 20px; }
+.accounts-reference .account-kebab:hover, .accounts-reference .account-kebab[aria-expanded='true'] { border-color: #8ebcec; background: #eef6ff; }
+.accounts-reference .accounts-state { padding: 40px 20px; color: #5d7396; }
+.accounts-reference .account-modal { padding: 24px; background: #172b4e70; backdrop-filter: blur(3px); }
+.accounts-reference .account-modal > form { width: min(560px, 100%); max-height: calc(100dvh - 48px); overflow-y: auto; padding: 28px; border: 1px solid #dce8f8; border-radius: 16px; background: #f8fbff; box-shadow: 0 22px 70px #0a254c33; }
+.accounts-reference .account-modal header { height: auto; align-items: flex-start; gap: 16px; margin-bottom: 24px; padding: 0; background: transparent; border: 0; }
+.accounts-reference .account-modal header > div { display: flex; align-items: flex-start; gap: 14px; }
+.accounts-reference .account-dialog-icon { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; color: #0070bc; background: #eaf5ff; }
+.accounts-reference .account-modal h2 { font-size: 22px; font-weight: 650; color: #14264a; line-height: 1.5; }
+.accounts-reference .account-modal header p { margin-top: 6px; color: #5b7090; font-size: 12px; line-height: 1.9; }
+.accounts-reference .account-modal header > button { display: grid; place-items: center; width: 32px; height: 32px; min-width: 32px; padding: 0; border: 1px solid #e2eaf5; border-radius: 8px; color: #5c7394; background: #f9fbff; }
+.accounts-reference .account-modal header > button svg { width: 18px; height: 18px; }
+.accounts-reference .account-dialog-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.accounts-reference .account-dialog-fields label { display: grid; gap: 8px; margin: 0 0 18px; font-size: 14px; font-weight: 600; color: #2c4166; }
+.accounts-reference .account-name-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.accounts-reference .account-modal input, .accounts-reference .account-modal select { width: 100%; height: 46px; padding: 0 12px; border: 1px solid #cedcee; border-radius: 8px; background: #fff; color: #243b60; font-size: 14px; font-weight: 400; }
+.accounts-reference .role-options { margin: 0 0 20px; }
+.accounts-reference .role-options legend { margin-bottom: 10px; }
+.accounts-reference .role-options > div { grid-template-columns: 1fr 1fr; gap: 14px; }
+.accounts-reference .role-options.viewer-only > div { grid-template-columns: 1fr; }
+.accounts-reference .role-options button { position: relative; min-height: 84px; gap: 7px; padding: 14px 12px; border-color: #c9d9ee; border-radius: 10px; }
+.accounts-reference .role-options button::after { content: ''; position: absolute; width: 14px; height: 14px; top: 13px; right: 13px; border: 1.5px solid #9eb2ce; border-radius: 50%; }
+.accounts-reference .role-options button.selected::after { border: 4px solid #087cf0; background: #fff; }
+.accounts-reference .role-options button svg { width: 24px; height: 24px; }
+.accounts-reference .role-options button strong { font-size: 14px; font-weight: 600; }
+.accounts-reference .account-modal footer { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e5ecf7; gap: 12px; }
+.accounts-reference .account-modal footer button { min-height: 44px; min-width: 92px; }
+.accounts-reference :focus-visible { outline: 2px solid #087cf0; outline-offset: 3px; }
+.accounts-reference .account-modal button:disabled { opacity: .55; cursor: wait; }
+.account-action-menu-popup button { margin: 0; }
+.account-action-menu-popup button:focus-visible { outline: 2px solid #087cf0; outline-offset: -2px; background: #edf6fd; }
+.account-action-menu-popup button:disabled { color: #8794a7; background: #f8fafc; cursor: not-allowed; }
+@media (max-width: 1200px) {
+  .accounts-reference .account-search { max-width: none; flex: 1; min-width: 180px; }
+  .accounts-reference .account-filters select { width: 144px; }
+}
+@media (max-width: 1050px) {
+  .accounts-reference .account-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .accounts-reference .account-filter-toolbar { flex-wrap: wrap; }
+}
+@media (max-width: 680px) {
+  .accounts-reference { padding: 16px 12px 24px; }
+  .accounts-reference .account-summary-grid { gap: 10px; }
+  .accounts-reference .account-summary { min-height: 98px; padding: 18px; }
+  .accounts-reference .account-summary small { font-size: 12px; }
+  .accounts-reference .account-summary strong { font-size: 28px; }
+  .accounts-reference .account-filter-toolbar { flex-direction: row; padding: 14px; gap: 12px; }
+  .accounts-reference .account-search { width: 100% !important; flex: auto; }
+  .accounts-reference .account-filters { width: 100%; gap: 10px; }
+  .accounts-reference .account-filters select { min-width: 0; width: calc(50% - 5px); flex: 1; padding: 0 10px; font-size: 13px; }
+  .accounts-reference .account-toolbar-add { width: 100%; margin: 0; }
+  .accounts-reference .account-modal { padding: 12px; }
+  .accounts-reference .account-modal > form { max-height: calc(100dvh - 24px); padding: 22px 18px; }
+  .accounts-reference .account-name-fields { grid-template-columns: 1fr; gap: 0; }
+  .accounts-reference .account-modal header { gap: 10px; margin-bottom: 20px; }
+  .accounts-reference .account-modal header > div { gap: 10px; }
+  .accounts-reference .account-dialog-icon { width: 36px; height: 36px; border-radius: 10px; }
+  .accounts-reference .account-modal h2 { font-size: 19px; }
+  .accounts-reference .role-options button { padding: 12px 8px; }
+  .accounts-reference .role-options button small { font-size: 10px; }
+}

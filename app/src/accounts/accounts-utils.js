@@ -5,7 +5,6 @@ export const accountAccessOptions = [
 
 export function accountActionItems(row) {
   if (row.isPrimaryAdmin || row.kind === 'INVITATION' || row.status === 'SETUP_REQUIRED') return []
-  if (row.status === 'DISABLED') return ['Reactivate']
   if (['ACTIVE', 'RESET_REQUIRED'].includes(row.status)) return ['Reset Login', 'Deactivate']
   return []
 }

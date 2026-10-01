@@ -20,6 +20,7 @@ import { adminDashboardRoutes, viewerDashboardRoutes } from './modules/dashboard
 import { auditRoutes } from './modules/audit/audit.routes.js'
 import { reportRoutes } from './modules/reports/report.routes.js'
 import { trashRoutes } from './modules/trash/trash.routes.js'
+import { homeRoutes } from './modules/home/home.routes.js'
 
 export function createApp(prisma = defaultPrisma, storage = createStorage()) {
   const app = express()
@@ -51,6 +52,7 @@ export function createApp(prisma = defaultPrisma, storage = createStorage()) {
   app.use('/api', requireAuth(prisma))
   app.use('/api', requirePasswordChanged)
   app.use('/api/admin', requireRoles('ADMIN'))
+  app.use('/api/admin/home', homeRoutes(prisma))
   app.use('/api/admin/users', userRoutes(prisma))
   app.use('/api/admin/categories', categoryRoutes(prisma))
   app.use('/api/admin/imports', importRoutes(prisma, storage))
