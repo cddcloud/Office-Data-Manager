@@ -9,7 +9,7 @@ import '../shared/workflow.css'
 
 const flatten = nodes => nodes.flatMap(node => [node, ...flatten(node.children || [])])
 
-export default function ProductionDashboard({ user, onLogout, onManage, embedded = false, target = null }) {
+export default function ProductionDashboard({ user, onLogout, onBack, embedded = false, target = null }) {
   const [tree, setTree] = useState([])
   const [collections, setCollections] = useState([])
   const [widgets, setWidgets] = useState([])
@@ -90,15 +90,19 @@ export default function ProductionDashboard({ user, onLogout, onManage, embedded
     catch (failure) { setError(failure.message) }
   }
   const charts = widgets.filter(item => (!collectionId || item.widget.dataCollectionId === collectionId) && branch.has(item.widget.dataCollection.categoryId))
+  function goBack() {
+    if (collectionId) setCollectionId('')
+    else if (folderId) { setFolderId(folder?.parentId || ''); setSearch(''); setDraft('') }
+    else if (search) { setSearch(''); setDraft('') }
+    else onBack?.()
+  }
   return <main className="workflow-dashboard central-data-dashboard">
     <header className="central-data-banner">
       <span className="central-data-emblem"><img src="/branding/state-emblem.png" alt="ပြည်ထောင်စုသမ္မတမြန်မာနိုင်ငံတော် အမှတ်တံဆိပ်" /></span>
       <div className="central-data-heading"><h1>ဗဟိုအချက်အလက်စုဆောင်းထိန်းသိမ်းရေးဌာနကြီး</h1><p>Central Data Dep</p></div>
       <span className="central-data-logo"><img src="/branding/central-data-dep.png" alt="ဗဟိုအချက်အလက်စုဆောင်းထိန်းသိမ်းရေးဌာနကြီး" /></span>
     </header>
-    <div className="central-data-utilities"><div className="central-data-account-row">{onManage && <button onClick={onManage}>စီမံခန့်ခွဲမှု</button>}{!embedded && <WorkflowHeader user={user} onLogout={onLogout} onTarget={openTarget} />}</div>
-      <form className="central-data-search" onSubmit={event => { event.preventDefault(); setSearch(draft.trim()); setFolderId(''); setCollectionId('') }}><input aria-label="အမည်ဖြင့်ရှာဖွေရန်" value={draft} onChange={event => setDraft(event.target.value)} placeholder="အမည်ဖြင့်ရှာဖွေရန်................" /><button aria-label="ရှာဖွေရန်" title="ရှာဖွေရန်">⌕</button></form>
-    </div>
+    <div className="central-data-utilities"><div className="central-data-account-row">{!embedded && <WorkflowHeader dashboard user={user} onLogout={onLogout} onTarget={openTarget} onBack={goBack} backDisabled={!onBack && !folderId && !collectionId && !search} searchControl={<form className="central-data-search" onSubmit={event => { event.preventDefault(); setSearch(draft.trim()); setFolderId(''); setCollectionId('') }}><input aria-label="အမည်ဖြင့်ရှာဖွေရန်" value={draft} onChange={event => setDraft(event.target.value)} placeholder="အမည်ဖြင့်ရှာဖွေရန်..." /><button aria-label="ရှာဖွေရန်" title="ရှာဖွေရန်"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></svg></button></form>} />}</div></div>
     <nav className="workflow-root-tabs" aria-label="Main folders">{tree.filter(node => node.mainSlot).map(node => <button key={node.id} className={root?.id === node.id ? 'active' : ''} onClick={() => { setFolderId(node.id); setCollectionId('') }}>{node.mainSlot === 1 && node.name === 'မဟာဗျူဟာနှင့် မူဝါဒ' ? <>မဟာဗျူဟာနှင့်<br />မူဝါဒ</> : node.mainSlot === 4 && node.name === 'ဝန်ကြီးဌာနများ ကော်မတီ၊ကော်မရှင်များ' ? <>ဝန်ကြီးဌာနများ<small>ကော်မတီ၊ကော်မရှင်များ</small></> : node.name}</button>)}</nav>
     {error && <p className="workflow-error" role="alert">{error} <button onClick={refresh}>Retry</button></p>}
     {!busy && !tree.length && !error && <p>ခွင့်ပြုထားသော Folder မရှိသေးပါ။ Migration mapping ကို စစ်ဆေးပါ။</p>}

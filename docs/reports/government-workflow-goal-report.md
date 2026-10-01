@@ -113,3 +113,16 @@ Changed-file/diff review found scoped requested frontend, shared header/identity
 ## GitHub delivery
 
 Branch: [codex/government-workflow](https://github.com/lwamkhaung1422002-wq/Office-DashBoard/tree/codex/government-workflow). Implementation commit: `42f58e13b15aa9c15cba9b42af95b169bf9599b3`, pushed successfully with normal `git push -u origin codex/government-workflow`. The separate report commit SHA and confirmed final push result are supplied in the final delivery message, avoiding a self-referential report hash. No force push or default-branch merge is performed.
+
+## Dashboard header follow-up — 2026-10-01
+
+The owner requested a Back arrow, user identity on the left, and search, notification bell and Logout on the right. The management text button was removed. Back and identity have additional spacing; Main Admin displays without the V1–V4 chip. Search now sits immediately beside the bell with a responsive width and 44px height matching the bell and Logout. On phones, identity and actions occupy separate rows. Other account clearance labels and existing authorization rules are retained.
+
+Changes are confined to `app/src/App.jsx`, `app/src/viewer/ProductionDashboard.jsx`, `app/src/shared/WorkflowHeader.jsx` and `app/src/shared/workflow.css`. Back clears Dashboard content/search navigation before returning an Admin to File Manager; Viewer landing Back remains disabled when there is no Dashboard history. The notification icon is now an SVG bell, with the existing persisted unread/dropdown behavior.
+
+Verification: app typecheck and final production build passed; app tests passed (6 files, 47 tests); `git diff --check` passed. Actual browser checks used the synthetic `office_workflow_verify_20261001` database and temporary ports 3101/5174. Main Admin Back opened File Manager, search returned one authorized synthetic record and Back cleared it, notifications opened and closed with Escape, and Logout returned the login form. Desktop and 390px phone layouts were visually checked; search, bell and Logout measured 44px high, with no phone horizontal overflow. No production account or database changes were made for this follow-up. The temporary server and browser tab were stopped after verification.
+
+- [Updated desktop header](ui-evidence/dashboard-header-desktop.png)
+- [Updated phone header](ui-evidence/dashboard-header-phone.png)
+
+These checks cover this header change; the broader verification gaps above remain unchanged.

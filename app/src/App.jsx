@@ -65,7 +65,7 @@ function WorkspaceApp(){
   if(!isContentAdmin(user)){if(!['/','/dashboard'].includes(window.location.pathname))return <main className="workflow-dashboard"><p role="alert">ဤ Management page ကို ဝင်ရောက်ခွင့်မရှိပါ။</p><button onClick={()=>choosePage('dashboard')}>Open Dashboard</button></main>;return <ProductionDashboard user={user} onLogout={signOut} target={target}/>}
   if(['accounts','preview'].includes(page)&&!canManageUsers(user))return <main className="workflow-dashboard"><p role="alert">ဤ page ကို ဝင်ရောက်ခွင့်မရှိပါ။</p><button onClick={()=>choosePage('dashboard')}>Open Dashboard</button></main>
   if(presentation||page==='preview')return referenceAllowed?<><div className="demo-reference-label">Demo / Design Reference — sample values only <button onClick={leave}>Back to Dashboard</button></div><Dashboard published={published} onBack={leave}/></>:referenceError?<p role="alert">{referenceError} <button onClick={leave}>Back to Dashboard</button></p>:<p role="status">Checking reference access…</p>
-  if(page==='dashboard')return <ProductionDashboard user={user} onLogout={signOut} onManage={()=>choosePage('categories')} target={target}/>
+  if(page==='dashboard')return <ProductionDashboard user={user} onLogout={signOut} onBack={()=>choosePage('categories')} target={target}/>
   return <div className="app drawer-shell">
     <aside className="temporary-drawer" aria-label="ပင်မလမ်းညွှန်">
       <div className="drawer-brand"><div className="drawer-mark">▤</div><div className="drawer-brand-copy"><b>အစိုးရရုံး အချက်အလက်စနစ်</b><small>Government Data Management System</small></div></div>
