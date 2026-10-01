@@ -1,5 +1,6 @@
 import { useDialogFocus } from '../shared/useDialogFocus.js'
 import PdfPreview from '../shared/PdfPreview.jsx'
+import FolderTreeHeader from '../shared/FolderTreeHeader.jsx'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import ChevronRightRounded from '@mui/icons-material/ChevronRightRounded'
@@ -213,7 +214,7 @@ export default function Categories({ onViewData }) {
   const cutController = useRef(createCutController())
   const selectedFolderRef = useRef(null)
   const [selectedFolderId, setSelectedFolderId] = useState(null)
-  const [expanded, setExpanded] = useState(new Set())
+  const [expanded, setExpanded] = useState(null)
   const [selection, setSelection] = useState(new Set())
   const [cutItems, setCutItems] = useState([])
   const [search, setSearch] = useState('')
@@ -247,7 +248,7 @@ export default function Categories({ onViewData }) {
   const selectedItems = useMemo(() => allItems.filter(item => selection.has(itemKey(item))), [allItems, selection])
   const location = selectedFolderId ? `Home / ${(contents?.breadcrumb || []).map(item => item.name).join(' / ')}` : 'Home'
   const cutKeys = useMemo(() => new Set(cutItems.map(itemKey)), [cutItems])
-  const displayedExpanded = useMemo(() => expanded.size ? expanded : new Set(tree.map(folder => folder.id)), [expanded, tree])
+  const displayedExpanded = useMemo(() => expanded ?? new Set(tree.map(folder => folder.id)), [expanded, tree])
   const canManage = isContentAdmin(user())
   useEffect(() => { selectedFolderRef.current = selectedFolderId }, [selectedFolderId])
   useEffect(() => {
@@ -272,7 +273,7 @@ export default function Categories({ onViewData }) {
   }
 
   function toggleTree(id) {
-    setExpanded(current => { const next = new Set(current.size ? current : tree.map(folder => folder.id)); next.has(id) ? next.delete(id) : next.add(id); return next })
+    setExpanded(current => { const next = new Set(current ?? tree.map(folder => folder.id)); next.has(id) ? next.delete(id) : next.add(id); return next })
   }
 
   function navigateToFolder(id) {
@@ -469,7 +470,7 @@ export default function Categories({ onViewData }) {
   const pageError = treeQuery.error || contentsQuery.error
   return <section className="file-manager" onClick={() => setMenu(null)}>
     <aside className="fm-sidebar">
-      <h2>Folders</h2>
+      <FolderTreeHeader onCollapse={() => setExpanded(new Set())} disabled={!displayedExpanded.size}/>
       <div className={`fm-tree-row home ${selectedFolderId === null ? 'selected' : ''}`}><span className="fm-tree-spacer" /><button className="fm-tree-name" onClick={() => navigateToFolder(null)}><HomeRounded /><span>Home</span></button></div>
       <div className="fm-tree-scroll">
         {treeQuery.isLoading ? <div className="fm-tree-loading"><i /><i /><i /><i /></div> : tree.length ? <FolderTree nodes={tree} selectedId={selectedFolderId} expanded={displayedExpanded} onToggle={toggleTree} onSelect={navigateToFolder} onContext={openTreeMenu} /> : <p className="fm-empty-tree">Folder မရှိသေးပါ</p>}

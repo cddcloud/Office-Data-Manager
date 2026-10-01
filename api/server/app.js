@@ -25,6 +25,7 @@ import { homeRoutes } from './modules/home/home.routes.js'
 export function createApp(prisma = defaultPrisma, storage = createStorage()) {
   const app = express()
   app.disable('x-powered-by')
+  app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 0))
   app.use(helmet())
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'private, no-store'); next() })
   app.use(cors({ origin: allowedOrigins(), credentials: true }))

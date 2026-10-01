@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --config vite.config.js",
     "build": "vite build --config vite.config.js",
+    "build:netlify": "node scripts/build-netlify.mjs",
     "preview": "vite preview --config vite.config.js",
     "test": "vitest run tests",
     "typecheck": "tsc -p tsconfig.categories.json"

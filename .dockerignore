@@ -1,0 +1,10 @@
+**/node_modules
+**/.env
+**/.env.*
+**/dist
+api/storage
+.git
+docs
+**/*.dump
+**/*.backup
+**/*.dpapi

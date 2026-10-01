@@ -8,7 +8,7 @@ const appSource = fs.readFileSync(path.resolve(process.cwd(), 'src/App.jsx'), 'u
 describe('Admin navigation', () => {
   it('uses the final visible drawer labels in order', () => {
     const labels = adminNavigation.map(([, label]) => label)
-    expect(labels).toEqual(['Home Page', 'File Manager', 'Data', 'User & Access', 'Dashboard', 'Demo / Design Reference'])
+    expect(labels).toEqual(['Home Page', 'File Manager', 'Data', 'User & Access', 'Dashboard'])
     expect(labels).not.toContain('လုပ်ဆောင်ချက်မှတ်တမ်း')
   })
 

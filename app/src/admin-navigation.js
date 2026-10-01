@@ -4,5 +4,4 @@ export const adminNavigation = [
   ['entry', 'Data', '▦'],
   ['accounts', 'User & Access', '♟'],
   ['dashboard', 'Dashboard', '▥'],
-  ['preview', 'Demo / Design Reference', '▥'],
 ]

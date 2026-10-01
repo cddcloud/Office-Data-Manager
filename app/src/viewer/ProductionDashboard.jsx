@@ -6,9 +6,15 @@ import { accessibleLevels } from '../shared/access.js'
 import { DocumentPreview } from './ViewerDashboard.jsx'
 import { useDialogFocus } from '../shared/useDialogFocus.js'
 import StrategyDashboard from './StrategyDashboard.jsx'
+import StructureDashboard from './StructureDashboard.jsx'
 import '../shared/workflow.css'
 
 const flatten = nodes => nodes.flatMap(node => [node, ...flatten(node.children || [])])
+function PendingMainTab({ node }) {
+  const [open, setOpen] = useState(false)
+  const noteId = `main-tab-ongoing-${node.mainSlot}`
+  return <div className="workflow-pending-tab" onPointerEnter={() => setOpen(true)} onPointerLeave={event => { if (!event.currentTarget.contains(document.activeElement)) setOpen(false) }}><button aria-describedby={open ? noteId : undefined} onClick={() => setOpen(true)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onKeyDown={event => { if (event.key === 'Escape') setOpen(false) }}>{node.mainSlot === 4 && node.name === 'ဝန်ကြီးဌာနများ ကော်မတီ၊ကော်မရှင်များ' ? <>ဝန်ကြီးဌာနများ<small>ကော်မတီ၊ကော်မရှင်များ</small></> : node.name}</button>{open && <span id={noteId} className="workflow-pending-note" role="status">ဆောင်ရွက်ဆဲ</span>}</div>
+}
 
 export default function ProductionDashboard({ user, onLogout, onBack, embedded = false, target = null }) {
   const [tree, setTree] = useState([])
@@ -35,6 +41,8 @@ export default function ProductionDashboard({ user, onLogout, onBack, embedded =
   const visited = new Set()
   while (root && !visited.has(root.id)) { visited.add(root.id); ancestors.unshift(root); if (!root.parentId) break; root = nodes.find(node => node.id === root.parentId) }
   const strategyView = root?.mainSlot === 1 && Boolean(folderId)
+  const structureView = root?.mainSlot === 2 && Boolean(folderId)
+  const fullPageView = strategyView || structureView
   const branch = new Set(flatten(folder ? [folder] : tree).map(node => node.id))
   const refresh = useCallback(() => { setRevision(value => value + 1) }, [])
   useEffect(() => {
@@ -54,17 +62,17 @@ export default function ProductionDashboard({ user, onLogout, onBack, embedded =
     setBusy(true); setError(''); setRecords({ data: [], meta: {} }); setDocuments({ data: [], meta: {} })
     const params = new URLSearchParams({ limit: '50' })
     if (folderId) params.set('categoryId', folderId)
-    if (strategyView && folderId !== root.id) params.set('includeDescendants', 'true')
+    if (fullPageView && folderId !== root.id) params.set('includeDescendants', 'true')
     if (level) params.set('accessLevel', level)
     if (search) params.set('search', search)
     const recordParams = new URLSearchParams(params)
     if (collectionId) recordParams.set('dataCollectionId', collectionId)
-    Promise.all([api('/categories'), api('/data/collections'), api(`/dashboard${level ? `?accessLevel=${level}` : ''}`), apiEnvelope(`/data?${recordParams}`), apiEnvelope(`/documents?${params}`)]).then(([roots, sets, charts, rows, files]) => {
+    Promise.all([api('/categories'), structureView ? [] : api('/data/collections'), structureView ? [] : api(`/dashboard${level ? `?accessLevel=${level}` : ''}`), structureView ? { data: [], meta: {} } : apiEnvelope(`/data?${recordParams}`), structureView ? { data: [], meta: {} } : apiEnvelope(`/documents?${params}`)]).then(([roots, sets, charts, rows, files]) => {
       if (!active) return
       setTree(roots); setCollections(sets); setWidgets(charts); setRecords(rows); setDocuments(files)
     }).catch(failure => { if (active) { setError(failure.message); setTree([]); setCollections([]); setWidgets([]) } }).finally(() => active && setBusy(false))
     return () => { active = false }
-  }, [folderId, collectionId, level, search, revision, strategyView])
+  }, [folderId, collectionId, level, search, revision, fullPageView, structureView])
   async function openRecord(id) {
     try { setRecord(await api(`/data/${id}`)) } catch (failure) { setError(failure.message) }
   }
@@ -82,7 +90,7 @@ export default function ProductionDashboard({ user, onLogout, onBack, embedded =
     setBusy(true)
     const params = new URLSearchParams({ limit: '50', cursor: page.meta.nextCursor })
     if (folderId) params.set('categoryId', folderId)
-    if (strategyView && folderId !== root.id) params.set('includeDescendants', 'true')
+    if (fullPageView && folderId !== root.id) params.set('includeDescendants', 'true')
     if (level) params.set('accessLevel', level)
     if (search) params.set('search', search)
     if (kind === 'data' && collectionId) params.set('dataCollectionId', collectionId)
@@ -102,19 +110,20 @@ export default function ProductionDashboard({ user, onLogout, onBack, embedded =
   }
   const searchControl = <form className="central-data-search" onSubmit={event => { event.preventDefault(); setSearch(draft.trim()); setFolderId(''); setCollectionId('') }}><input aria-label="အမည်ဖြင့်ရှာဖွေရန်" value={draft} onChange={event => setDraft(event.target.value)} placeholder="အမည်ဖြင့်ရှာဖွေရန်..."/><button aria-label="ရှာဖွေရန်" title="ရှာဖွေရန်"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></button></form>
   return <main className="workflow-dashboard central-data-dashboard">
-    {!strategyView && <><header className="central-data-banner">
+    {!fullPageView && <><header className="central-data-banner">
       <span className="central-data-emblem"><img src="/branding/state-emblem.png" alt="ပြည်ထောင်စုသမ္မတမြန်မာနိုင်ငံတော် အမှတ်တံဆိပ်" /></span>
       <div className="central-data-heading"><h1>ဗဟိုအချက်အလက်စုဆောင်းထိန်းသိမ်းရေးဌာနကြီး</h1><p>Central Data Department</p></div>
       <span className="central-data-logo"><img src="/branding/central-data-dep.png" alt="ဗဟိုအချက်အလက်စုဆောင်းထိန်းသိမ်းရေးဌာနကြီး" /></span>
     </header>
     <div className="central-data-utilities"><div className="central-data-account-row">{!embedded && <WorkflowHeader dashboard user={user} onLogout={onLogout} onTarget={openTarget} onBack={goBack} backDisabled={!onBack && !folderId && !collectionId && !search} searchControl={searchControl} />}</div></div>
-    <nav className="workflow-root-tabs" aria-label="Main folders">{tree.filter(node => node.mainSlot).map(node => <button key={node.id} className={root?.id === node.id ? 'active' : ''} onClick={() => { setFolderId(node.id); setCollectionId(''); setSearch(''); setDraft(''); if (node.mainSlot === 1) setLevel('') }}>{node.mainSlot === 1 && node.name === 'မဟာဗျူဟာနှင့် မူဝါဒ' ? <>မဟာဗျူဟာနှင့်<br />မူဝါဒ</> : node.mainSlot === 4 && node.name === 'ဝန်ကြီးဌာနများ ကော်မတီ၊ကော်မရှင်များ' ? <>ဝန်ကြီးဌာနများ<small>ကော်မတီ၊ကော်မရှင်များ</small></> : node.name}</button>)}</nav></>}
-    {strategyView && <StrategyDashboard root={root} folder={folder} documents={documents.meta.categoryId === folderId ? documents : { data: [], meta: {} }} busy={busy} error={error} onSelect={id => { setFolderId(id); setCollectionId(''); setSearch(''); setDraft('') }} onBack={goBack} onPreview={openDocument} onDownload={file => download(`/documents/${file.id}/download`, file.fileName)} onMore={() => more('documents')} onRefresh={refresh} accountHeader={!embedded && <>{searchControl}<WorkflowHeader user={user} onLogout={onLogout} onTarget={openTarget}/></>}/>}
-    {error && !strategyView && <p className="workflow-error" role="alert">{error} <button onClick={refresh}>Retry</button></p>}
+    <nav className="workflow-root-tabs" aria-label="Main folders">{tree.filter(node => node.mainSlot).map(node => [1, 2].includes(node.mainSlot) ? <button key={node.id} className={root?.id === node.id ? 'active' : ''} onClick={() => { setFolderId(node.id); setCollectionId(''); setSearch(''); setDraft(''); setLevel('') }}>{node.mainSlot === 1 && node.name === 'မဟာဗျူဟာနှင့် မူဝါဒ' ? <>မဟာဗျူဟာနှင့်<br />မူဝါဒ</> : node.name}</button> : <PendingMainTab key={node.id} node={node}/>)}</nav></>}
+    {strategyView && <StrategyDashboard root={root} folder={folder} ancestors={ancestors} documents={documents.meta.categoryId === folderId ? documents : { data: [], meta: {} }} busy={busy} error={error} onSelect={id => { setFolderId(id); setCollectionId(''); setSearch(''); setDraft('') }} onBack={goBack} onPreview={openDocument} onDownload={file => download(`/documents/${file.id}/download`, file.fileName)} onMore={() => more('documents')} onRefresh={refresh} accountHeader={!embedded && <>{searchControl}<WorkflowHeader user={user} onLogout={onLogout} onTarget={openTarget}/></>}/>}
+    {structureView && <StructureDashboard root={root} folder={folder} ancestors={ancestors} error={error} onSelect={id => { setFolderId(id); setCollectionId(''); setLevel(''); setSearch(''); setDraft('') }} onBack={goBack} onRefresh={refresh} accountHeader={!embedded && <>{searchControl}<WorkflowHeader user={user} onLogout={onLogout} onTarget={openTarget}/></>}/> }
+    {error && !fullPageView && <p className="workflow-error" role="alert">{error} <button onClick={refresh}>Retry</button></p>}
     {!busy && !tree.length && !error && <p>ခွင့်ပြုထားသော Folder မရှိသေးပါ။ Migration mapping ကို စစ်ဆေးပါ။</p>}
     {!folderId && !search && <div className="central-data-sections">{[['အစည်းအဝေးများ', 'အစည်းအဝေး'], ['အထွေထွေ(SCPRU မှ )', 'အထွေထွေ']].map(([label, keyword]) => <section key={keyword} className="central-data-section"><button className="central-data-section-title" onClick={() => { const match = nodes.find(node => node.parentId && node.name.includes(keyword)); if (match) { setFolderId(match.id); setCollectionId('') } else { setDraft(keyword); setSearch(keyword) } }}>{label}</button></section>)}</div>}
     {!folderId && !search && busy && <p role="status">အချက်အလက် ရယူနေသည်…</p>}
-    {!strategyView && (folderId || search) && <div className="workflow-dashboard-layout"><aside><h3>Folder များ</h3>{flatten(root ? [root] : tree).map(node => <button key={node.id} className={folderId === node.id ? 'active' : ''} onClick={() => { setFolderId(node.id); setCollectionId('') }}>{node.name}</button>)}<h3>Structured Data</h3>{collections.filter(item => branch.has(item.categoryId)).map(item => <button key={item.id} className={collectionId === item.id ? 'active' : ''} onClick={() => setCollectionId(current => current === item.id ? '' : item.id)}>{item.name}<small> · {item._count?.records || 0} authorized records</small></button>)}</aside>
+    {!fullPageView && (folderId || search) && <div className="workflow-dashboard-layout"><aside><h3>Folder များ</h3>{flatten(root ? [root] : tree).map(node => <button key={node.id} className={folderId === node.id ? 'active' : ''} onClick={() => { setFolderId(node.id); setCollectionId('') }}>{node.name}</button>)}<h3>Structured Data</h3>{collections.filter(item => branch.has(item.categoryId)).map(item => <button key={item.id} className={collectionId === item.id ? 'active' : ''} onClick={() => setCollectionId(current => current === item.id ? '' : item.id)}>{item.name}<small> · {item._count?.records || 0} authorized records</small></button>)}</aside>
     <section className="workflow-panel"><nav className="workflow-toolbar" aria-label="Breadcrumbs"><button onClick={() => { setFolderId(''); setCollectionId(''); setSearch(''); setDraft('') }}>ပင်မစာမျက်နှာ</button>{ancestors.map(node => <button key={node.id} onClick={() => { setFolderId(node.id); setCollectionId('') }}>{node.name} ›</button>)}</nav>
       <form className="workflow-toolbar" onSubmit={event => { event.preventDefault(); setSearch(draft.trim()) }}><label>Search<input value={draft} onChange={event => setDraft(event.target.value)} placeholder="အချက်အလက် ရှာရန်…" /></label><button>ရှာဖွေရန်</button><label>Content level<select value={level} onChange={event => setLevel(event.target.value)}><option value="">All permitted levels</option>{accessibleLevels(user).map(value => <option key={value}>{value}</option>)}</select></label><button type="button" onClick={refresh}>Refresh</button>{collection && <button type="button" onClick={() => download(`/reports/export?dataCollectionId=${collectionId}&format=xlsx${level ? `&accessLevel=${level}` : ''}`, `filtered-${collection.name}.xlsx`)}>Filtered Excel export</button>}</form>
       {busy && <p role="status">အချက်အလက် ရယူနေသည်…</p>}

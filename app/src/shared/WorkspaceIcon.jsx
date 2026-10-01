@@ -14,6 +14,7 @@ const paths = {
   add: 'M12 5v14M5 12h14',
   search: 'M16 16l5 5',
   dots: 'M12 5v.01M12 12v.01M12 19v.01',
+  collapse: 'M6 3h15v15H6V3M3 6v15h15M10 10h7',
 }
 
 export default function WorkspaceIcon({ name, className = '' }) {
