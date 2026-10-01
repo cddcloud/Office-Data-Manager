@@ -88,3 +88,7 @@ Stop writers before rollback. Restore the verified database backup and matching 
 Retain audit history and backup evidence. Existing retention/purge behavior remains unchanged; this implementation adds no new government retention policy. Power BI hosting, licensing and classified-data handling remain deferred. Do not use Publish to web or introduce a cloud transfer.
 
 The two workflow verification databases contain synthetic data. A third private verification database restored the real backup to rehearse the authorized reset; treat it as sensitive and internal. The temporary synthetic UI server on 3101/5174 was stopped before live migration. Normal development was restarted on 3001/5173. Main credentials were neither reset nor exposed.
+
+## Strategy/Policy department setup
+
+After the protected six roots and existing Main Admin are ready, run `node server/scripts/setup-strategy-departments.js` from `api` to create the requested 17 department child folders under main slot 1. This is explicit setup; Dashboard reads never create folders. New folders inherit the root's classification and receive numeric ordering and normal creation audit entries. The setup runs in one transaction, reuses an existing complete ordered set (including renamed folders), and refuses to guess a mapping for an unexpected child structure. It does not replace any existing content or create extra root folders. Dashboard uses the ordinary authorized category tree and document APIs; menu labels follow current folder names and file previews remain private.

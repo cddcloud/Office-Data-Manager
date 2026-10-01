@@ -6,6 +6,7 @@ const paths = {
   dashboard: 'M3 3h7v7H3V3M14 3h7v7h-7V3M3 14h7v7H3v-7M14 14h7v7h-7v-7',
   preview: 'M8 5l11 7-11 7V5',
   logout: 'M9 4H4v16h5M13 7l5 5-5 5M8 12h12',
+  download: 'M12 3v12M7 10l5 5 5-5M4 16v5h16v-5',
   menu: 'M4 6h16M4 12h16M4 18h16',
   close: 'M6 6l12 12M18 6L6 18',
   clock: 'M12 7v5l3 2',
