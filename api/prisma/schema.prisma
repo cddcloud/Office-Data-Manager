@@ -8,6 +8,7 @@ datasource db {
 }
 
 enum UserRole {
+  VIEWER
   ADMIN
   NORMAL_VIEWER
   VIP_VIEWER
@@ -56,9 +57,20 @@ enum AuditAction {
 }
 
 enum AccessLevel {
+  V1
+  V2
+  V3
+  V4
   NORMAL
   VIP
   ADMIN
+}
+
+enum Clearance {
+  V1
+  V2
+  V3
+  V4
 }
 
 enum DataFieldType {
@@ -111,7 +123,9 @@ model User {
   email              String                      @unique
   name               String
   passwordHash       String
-  role               UserRole                    @default(NORMAL_VIEWER)
+  role               UserRole                    @default(VIEWER)
+  clearance          Clearance?
+  permissionVersion  Int                         @default(0)
   isActive           Boolean                     @default(true)
   isPrimaryAdmin     Boolean                     @default(false)
   loginResetRequired Boolean                     @default(false)
@@ -135,8 +149,10 @@ model User {
   accountInvites     AccountInvite[]             @relation("AccountInviteCreator")
   resetTokens        AccountPasswordResetToken[] @relation("ResetTokenUser")
   resetTokensCreated AccountPasswordResetToken[] @relation("ResetTokenCreator")
+  notificationReads NotificationRead[]
 
   @@index([role, isActive])
+  @@index([clearance, isActive])
 }
 
 model RefreshToken {
@@ -155,7 +171,8 @@ model AccountInvite {
   id          String    @id @default(cuid())
   email       String
   name        String
-  role        UserRole  @default(NORMAL_VIEWER)
+  role        UserRole  @default(VIEWER)
+  clearance   Clearance?
   tokenHash   String    @unique
   expiresAt   DateTime
   acceptedAt  DateTime?
@@ -186,6 +203,8 @@ model AccountPasswordResetToken {
 }
 
 model Category {
+  mainSlot        Int?             @unique
+  accessLevel     AccessLevel?     @default(V4)
   id              String           @id @default(cuid())
   name            String
   description     String?
@@ -208,6 +227,7 @@ model Category {
   @@unique([parentId, name])
   @@index([parentId, archivedAt, sortOrder])
   @@index([archivedAt, name])
+  @@index([accessLevel, archivedAt])
 }
 
 model DataCollection {
@@ -216,7 +236,7 @@ model DataCollection {
   category           Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   name               String
   description        String?
-  defaultAccessLevel AccessLevel       @default(NORMAL)
+  defaultAccessLevel AccessLevel       @default(V4)
   archivedAt         DateTime?
   createdById        String?
   createdBy          User?             @relation("DataCollectionCreator", fields: [createdById], references: [id], onDelete: SetNull)
@@ -265,7 +285,7 @@ model DashboardWidget {
   aggregation      AggregationType
   timeGrouping     TimeGrouping?
   savedFilters     Json?
-  accessLevel      AccessLevel     @default(NORMAL)
+  accessLevel      AccessLevel     @default(V4)
   sortOrder        Int             @default(0)
   isActive         Boolean         @default(true)
   archivedAt       DateTime?
@@ -288,7 +308,7 @@ model DataRecord {
   dataCollection   DataCollection @relation(fields: [dataCollectionId], references: [id], onDelete: Restrict)
   categoryId       String
   category         Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  accessLevel      AccessLevel    @default(NORMAL)
+  accessLevel      AccessLevel    @default(V4)
   sourceType       DataSourceType @default(MANUAL)
   sourceImportId   String?
   sourceImport     ImportJob?     @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
@@ -307,6 +327,8 @@ model DataRecord {
 }
 
 model ImportJob {
+  accessLevel      AccessLevel?
+  operationKey     String?         @unique
   id               String          @id @default(cuid())
   originalFileName String
   storageKey       String          @unique
@@ -335,6 +357,7 @@ model ImportJob {
 }
 
 model Document {
+  operationKey String?     @unique
   id          String      @id @default(cuid())
   title       String
   description String?
@@ -342,7 +365,7 @@ model Document {
   mimeType    String
   fileSize    Int
   storageKey  String      @unique
-  accessLevel AccessLevel @default(NORMAL)
+  accessLevel AccessLevel @default(V4)
   categoryId  String
   category    Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   createdById String?
@@ -373,4 +396,26 @@ model AuditLog {
   @@index([actorId, createdAt])
   @@index([action, createdAt])
   @@index([entityType, createdAt])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  operationKey String  @unique
+  kind        String
+  targetId    String
+  createdAt   DateTime @default(now())
+  reads       NotificationRead[]
+
+  @@index([createdAt, id])
+}
+
+model NotificationRead {
+  notificationId String
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt DateTime?
+
+  @@id([notificationId, userId])
+  @@index([userId, readAt])
 }

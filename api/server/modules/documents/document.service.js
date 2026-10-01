@@ -1,7 +1,8 @@
-import { allowedAccessLevels } from '../../lib/access.js'
+import { allowedAccessLevels, assertCategoryAccess, assertInputLevel, contentWhere, resolveActor } from '../../lib/access.js'
 import { createAuditService } from '../../lib/audit.js'
 import { categoryIds } from '../../lib/categories.js'
 import { DomainError, notFound } from '../../lib/errors.js'
+import { createOperationNotification } from '../notifications/notification.service.js'
 import { makeStorageKey } from '../../lib/storage.js'
 
 const metadataSelect = {
@@ -21,10 +22,10 @@ function hasExpectedSignature(file) {
 }
 
 export function createDocumentService(prisma, storage) {
-  const accessWhere = role => ({ accessLevel: { in: allowedAccessLevels(role) } })
+
 
   async function internal(id, role, includeArchived = false) {
-    const document = await prisma.document.findFirst({ where: { id, ...accessWhere(role), ...(includeArchived ? {} : { archivedAt: null }) }, include: { createdBy: { select: { name: true } }, updatedBy: { select: { name: true } } } })
+    const document = await prisma.document.findFirst({ where: { id, ...await contentWhere(prisma, role, 'document', includeArchived) }, include: { createdBy: { select: { name: true } }, updatedBy: { select: { name: true } } } })
     if (!document) throw notFound('Document')
     return document
   }
@@ -33,14 +34,17 @@ export function createDocumentService(prisma, storage) {
     async list(query, role) {
       const take = Math.min(100, Math.max(1, query.limit || 50))
       /** @type {any} */
-      const where = { archivedAt: null, ...accessWhere(role) }
-      if (query.categoryId) where.categoryId = { in: await categoryIds(prisma, query.categoryId, query.includeDescendants) }
+      const where = { ...await contentWhere(prisma, role, 'document') }
+      if (query.categoryId) { await assertCategoryAccess(prisma, role, query.categoryId); const permitted = new Set(where.categoryId.in); where.categoryId = { in: (await categoryIds(prisma, query.categoryId, query.includeDescendants)).filter(id => permitted.has(id)) } }
+      if (query.accessLevel) where.accessLevel = { in: allowedAccessLevels(role).filter(level => level === query.accessLevel) }
       if (query.search) where.OR = [{ title: { contains: query.search, mode: 'insensitive' } }, { description: { contains: query.search, mode: 'insensitive' } }]
       if (query.mimeType) where.mimeType = query.mimeType
+      if (query.cursor && !await prisma.document.findFirst({ where: { ...where, id: query.cursor }, select: { id: true } })) throw notFound('Content')
       const rows = await prisma.document.findMany({ where, select: metadataSelect, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: take + 1, cursor: cursor(query.cursor), skip: query.cursor ? 1 : 0 })
       const hasMore = rows.length > take
       const data = rows.slice(0, take)
-      return { data, meta: { categoryId: query.categoryId || null, nextCursor: hasMore ? data.at(-1).id : null, limit: take } }
+      const total = await prisma.document.count({ where })
+      return { data, meta: { total, categoryId: query.categoryId || null, nextCursor: hasMore ? data.at(-1).id : null, limit: take } }
     },
     async get(id, role) {
       const document = await internal(id, role)
@@ -50,22 +54,41 @@ export function createDocumentService(prisma, storage) {
       const document = await internal(id, role)
       return { document, buffer: await storage.getObject(document.storageKey) }
     },
-    async upload({ file, title, description = undefined, categoryId, accessLevel }, actorId) {
+    async upload({ file, title, description = undefined, categoryId, accessLevel, operationKey }, actorId) {
+      const actor = await resolveActor(prisma, actorId)
+      assertInputLevel(actor, accessLevel)
+      await assertCategoryAccess(prisma, actor, categoryId)
       if (!['application/pdf', 'image/jpeg'].includes(file.mimetype)) throw new DomainError(415, 'UNSUPPORTED_DOCUMENT_TYPE', 'Only PDF and JPG/JPEG documents are supported')
       if (!hasExpectedSignature(file)) throw new DomainError(422, 'INVALID_DOCUMENT_CONTENT', 'The uploaded file content does not match its declared type')
       const category = await prisma.category.findFirst({ where: { id: categoryId, archivedAt: null }, select: { id: true } })
       if (!category) throw new DomainError(422, 'INVALID_CATEGORY', 'The selected category is unavailable')
+      if (operationKey) {
+        const existing = await prisma.document.findUnique({ where: { operationKey } })
+        if (existing) {
+          await internal(existing.id, actor)
+          if (existing.categoryId !== categoryId || existing.accessLevel !== accessLevel || existing.title !== title || existing.fileName !== file.originalname || existing.mimeType !== file.mimetype || existing.description !== (description || null) || !(await storage.getObject(existing.storageKey)).equals(file.buffer)) throw new DomainError(409, 'IDEMPOTENCY_CONFLICT', 'The retry differs from the original operation')
+          return this.get(existing.id, actor)
+        }
+      }
       const storageKey = makeStorageKey('documents', file.originalname)
       await storage.putObject({ key: storageKey, body: file.buffer, contentType: file.mimetype })
       return prisma.$transaction(async tx => {
-        const created = await tx.document.create({ data: { title, description: description || null, fileName: file.originalname, mimeType: file.mimetype, fileSize: file.size, storageKey, categoryId, accessLevel, createdById: actorId, updatedById: actorId }, select: metadataSelect })
+        const created = await tx.document.create({ data: { title, description: description || null, fileName: file.originalname, mimeType: file.mimetype, fileSize: file.size, storageKey, categoryId, accessLevel, operationKey, createdById: actorId, updatedById: actorId }, select: metadataSelect })
         await createAuditService(tx).record({ actorId, action: 'DOCUMENT_UPLOADED', entityType: 'Document', entityId: created.id, after: created })
+        await createOperationNotification(tx, 'DOCUMENT', created.id, `document:${created.id}`)
         return created
+      }).catch(async error => {
+        await storage.deleteObject(storageKey)
+        if (error.code === 'P2002' && operationKey) return this.upload({ file, title, description, categoryId, accessLevel, operationKey }, actorId)
+        throw error
       })
     },
     async update(id, input, actorId) {
-      const before = await internal(id, 'ADMIN', true)
+      const actor = await resolveActor(prisma, actorId)
+      const before = await internal(id, actor, true)
+      if (input.accessLevel) assertInputLevel(actor, input.accessLevel, before.accessLevel)
       if (input.categoryId) {
+        await assertCategoryAccess(prisma, actor, input.categoryId)
         const category = await prisma.category.findFirst({ where: { id: input.categoryId, archivedAt: null }, select: { id: true } })
         if (!category) throw new DomainError(422, 'INVALID_CATEGORY', 'The selected category is unavailable')
       }
@@ -76,7 +99,8 @@ export function createDocumentService(prisma, storage) {
       })
     },
     async archive(id, actorId) {
-      const before = await internal(id, 'ADMIN', true)
+      const actor = await resolveActor(prisma, actorId)
+      const before = await internal(id, actor, true)
       if (before.archivedAt) return before
       return prisma.$transaction(async tx => {
         const after = await tx.document.update({ where: { id }, data: { archivedAt: new Date(), updatedById: actorId }, select: metadataSelect })
@@ -85,8 +109,10 @@ export function createDocumentService(prisma, storage) {
       })
     },
     async restore(id, actorId) {
-      const before = await internal(id, 'ADMIN', true)
+      const actor = await resolveActor(prisma, actorId)
+      const before = await internal(id, actor, true)
       if (!before.archivedAt) return before
+      await assertCategoryAccess(prisma, actor, before.categoryId)
       const category = await prisma.category.findFirst({ where: { id: before.categoryId, archivedAt: null }, select: { id: true } })
       if (!category) throw new DomainError(409, 'ARCHIVED_CATEGORY', 'Restore the containing folder before restoring this document')
       return prisma.$transaction(async tx => {

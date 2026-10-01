@@ -24,5 +24,5 @@ export function errorHandler(error, req, res, next) {
     return res.status(error.status).json({ error: { code: error.code, message: error.message, details: error.details } })
   }
   logger.error({ err: error, requestId: req.id }, 'Unhandled request error')
-  res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred', ...(process.env.NODE_ENV === 'production' ? {} : { details: error.message }) } })
+  res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } })
 }

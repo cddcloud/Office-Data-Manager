@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs'
 import PDFDocument from 'pdfkit'
-import { allowedAccessLevels } from '../../lib/access.js'
+import { allowedAccessLevels, assertCategoryAccess, collectionWhere, contentWhere } from '../../lib/access.js'
 import { createAuditService } from '../../lib/audit.js'
 import { categoryIds } from '../../lib/categories.js'
 import { DomainError, notFound } from '../../lib/errors.js'
@@ -9,10 +9,12 @@ import { validateRecordPayload } from '../data/data.validation.js'
 const MAX_EXPORT_ROWS = 10_000
 
 async function reportRecords(prisma, query, role) {
-  const collection = await prisma.dataCollection.findFirst({ where: { id: query.dataCollectionId, archivedAt: null }, include: { fields: { orderBy: { position: 'asc' } } } })
+  const collection = await prisma.dataCollection.findFirst({ where: { id: query.dataCollectionId, ...await collectionWhere(prisma, role) }, include: { fields: { orderBy: { position: 'asc' } } } })
   if (!collection) throw notFound('Data collection')
-  const where = { dataCollectionId: collection.id, archivedAt: null, accessLevel: { in: allowedAccessLevels(role) } }
-  if (query.categoryId) where.categoryId = { in: await categoryIds(prisma, query.categoryId, true) }
+  /** @type {any} */
+  const where = { dataCollectionId: collection.id, ...await contentWhere(prisma, role, 'record') }
+  if (query.accessLevel) where.accessLevel = { in: allowedAccessLevels(role).filter(level => level === query.accessLevel) }
+  if (query.categoryId) { await assertCategoryAccess(prisma, role, query.categoryId); const permitted = new Set(where.categoryId.in); where.categoryId = { in: (await categoryIds(prisma, query.categoryId, true)).filter(id => permitted.has(id)) } }
   if (query.from || query.to) where.createdAt = { ...(query.from ? { gte: query.from } : {}), ...(query.to ? { lte: query.to } : {}) }
   if (query.filters) {
     const values = validateRecordPayload(collection.fields, query.filters, { partial: true })
@@ -57,7 +59,7 @@ function pdfBuffer(collection, records) {
 export function createReportService(prisma) {
   return {
     async generate(query, user) {
-      const { collection, records } = await reportRecords(prisma, query, user.role)
+      const { collection, records } = await reportRecords(prisma, query, user)
       let body
       let mimeType
       let extension
@@ -65,7 +67,7 @@ export function createReportService(prisma) {
       else if (query.format === 'pdf') { body = await pdfBuffer(collection, records); mimeType = 'application/pdf'; extension = 'pdf' }
       else { body = { collection: { id: collection.id, name: collection.name, fields: collection.fields }, records }; mimeType = 'application/json'; extension = 'json' }
       await createAuditService(prisma).record({ actorId: user.id, action: 'REPORT_EXPORTED', entityType: 'DataCollection', entityId: collection.id, metadata: { format: query.format, rows: records.length, filters: query.filters || null } })
-      return { body, mimeType, fileName: `${collection.name.replace(/[^\p{L}\p{N}_-]+/gu, '_')}.${extension}` }
+      return { body, mimeType, fileName: `filtered-${collection.name.replace(/[^\p{L}\p{N}_-]+/gu, '_')}.${extension}` }
     },
   }
 }

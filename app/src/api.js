@@ -87,6 +87,7 @@ async function request(path, options = {}, retry = true) {
   }
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw apiError(payload, 'တောင်းဆိုမှု မအောင်မြင်ပါ')
+  if (typeof window !== 'undefined' && options.method && !['GET', 'HEAD'].includes(options.method) && !path.startsWith('/auth/')) window.dispatchEvent(new Event('office:content-changed'))
   return payload
 }
 

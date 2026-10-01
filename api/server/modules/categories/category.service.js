@@ -1,10 +1,11 @@
 import { DomainError, notFound } from '../../lib/errors.js'
-import { allowedAccessLevels } from '../../lib/access.js'
+import { authorizedCategoryIds, assertCategoryAccess, assertInputLevel, assertSubtreeAccess, contentWhere, isContentAdmin, isMainAdmin, resolveActor } from '../../lib/access.js'
 import { createAuditService } from '../../lib/audit.js'
 
-const activeWhere = { archivedAt: null }
 const clean = category => ({
   id: category.id,
+  mainSlot: category.mainSlot,
+  accessLevel: category.accessLevel,
   name: category.name,
   description: category.description,
   sortOrder: category.sortOrder,
@@ -64,35 +65,14 @@ function filterTree(nodes, query) {
   })
 }
 
-function visibleViewerBranches(nodes) {
-  return nodes.flatMap(node => {
-    const children = visibleViewerBranches(node.children)
-    return node.directDataCount || node.directDocumentCount || children.length
-      ? [{ ...node, children }]
-      : []
-  })
-}
-
-async function loadHierarchy(db, includeArchived = false, role) {
-  const where = includeArchived ? {} : activeWhere
-  const viewer = role && role !== 'ADMIN'
-  const contentWhere = { ...activeWhere, ...(role ? { accessLevel: { in: allowedAccessLevels(role) } } : {}) }
+async function loadHierarchy(db, includeArchived = false, actor) {
+  const ids = await authorizedCategoryIds(db, actor, { includeArchived })
   const [categories, dataGroups, documentGroups] = await Promise.all([
-    db.category.findMany({ where, include: { createdBy: { select: { name: true } }, updatedBy: { select: { name: true } } } }),
-    db.dataRecord.groupBy({ by: ['categoryId'], where: { ...contentWhere, ...(viewer ? { dataCollection: { archivedAt: null, defaultAccessLevel: { in: allowedAccessLevels(role) } } } : {}) }, _count: { _all: true } }),
-    db.document.groupBy({ by: ['categoryId'], where: contentWhere, _count: { _all: true } }),
+    db.category.findMany({ where: { id: { in: ids } }, include: { createdBy: { select: { name: true } }, updatedBy: { select: { name: true } } } }),
+    db.dataRecord.groupBy({ by: ['categoryId'], where: await contentWhere(db, actor, 'record'), _count: { _all: true } }),
+    db.document.groupBy({ by: ['categoryId'], where: await contentWhere(db, actor, 'document'), _count: { _all: true } }),
   ])
-  const hierarchy = assembleTree(
-    categories,
-    new Map(dataGroups.map(group => [group.categoryId, group._count._all])),
-    new Map(documentGroups.map(group => [group.categoryId, group._count._all])),
-  )
-  if (!viewer) return hierarchy
-  const roots = visibleViewerBranches(hierarchy.roots)
-  const byId = new Map()
-  const visit = node => { byId.set(node.id, node); node.children.forEach(visit) }
-  roots.forEach(visit)
-  return { roots, byId }
+  return assembleTree(categories, new Map(dataGroups.map(g => [g.categoryId, g._count._all])), new Map(documentGroups.map(g => [g.categoryId, g._count._all])))
 }
 
 async function categorySubtree(db, rootId) {
@@ -113,14 +93,14 @@ async function categorySubtree(db, rootId) {
 export function createCategoryService(prisma) {
   return {
     async tree({ search = '', includeArchived = false } = {}, role) {
-      const { roots } = await loadHierarchy(prisma, includeArchived, role)
+      const { roots } = await loadHierarchy(prisma, isContentAdmin(role) && includeArchived, role)
       return filterTree(roots, search)
     },
 
     async details(id, role) {
       const record = await prisma.category.findUnique({ where: { id } })
       if (!record) throw notFound('Category')
-      const { roots, byId } = await loadHierarchy(prisma, role === 'ADMIN' && Boolean(record.archivedAt), role)
+      const { roots, byId } = await loadHierarchy(prisma, isContentAdmin(role) && Boolean(record.archivedAt), role)
       const selected = byId.get(id)
       if (!selected) throw notFound('Category')
       const breadcrumb = []
@@ -136,6 +116,10 @@ export function createCategoryService(prisma) {
     },
 
     async create(input, actorId) {
+      const actor = await resolveActor(prisma, actorId)
+      if (!input.parentId) throw new DomainError(409, 'PROTECTED_ROOTS', 'Create child folders inside one of the six main folders')
+      assertInputLevel(actor, input.accessLevel)
+      await assertCategoryAccess(prisma, actor, input.parentId)
       return prisma.$transaction(async tx => {
         if (input.parentId) {
           const parent = await tx.category.findUnique({ where: { id: input.parentId } })
@@ -151,9 +135,18 @@ export function createCategoryService(prisma) {
     },
 
     async update(id, input, actorId) {
+      const actor = await resolveActor(prisma, actorId)
+      await assertCategoryAccess(prisma, actor, id)
       return prisma.$transaction(async tx => {
         const current = await tx.category.findUnique({ where: { id } })
         if (!current) throw notFound('Category')
+        if (!current.parentId || current.mainSlot) {
+          if (!isMainAdmin(actor) || Object.keys(input).some(key => key !== 'name')) throw new DomainError(403, 'PROTECTED_ROOTS', 'Only Main Admin may rename a main folder')
+        }
+        if (input.accessLevel) {
+          assertInputLevel(actor, input.accessLevel, current.accessLevel)
+          await assertSubtreeAccess(tx, actor, (await categorySubtree(tx, id)).map(row => row.id))
+        }
         if (input.name && await siblingExists(tx, { name: input.name, parentId: current.parentId, excludeId: id })) {
           throw new DomainError(409, 'DUPLICATE_CATEGORY', 'A category with this name already exists in the selected location')
         }
@@ -164,9 +157,15 @@ export function createCategoryService(prisma) {
     },
 
     async move(id, parentId, actorId) {
+      const actor = await resolveActor(prisma, actorId)
+      if (!parentId) throw new DomainError(409, 'PROTECTED_ROOTS', 'Child folders must remain inside a main folder')
+      await assertCategoryAccess(prisma, actor, id)
+      await assertCategoryAccess(prisma, actor, parentId)
       return prisma.$transaction(async tx => {
         const current = await tx.category.findUnique({ where: { id } })
         if (!current) throw notFound('Category')
+        if (!current.parentId || current.mainSlot) throw new DomainError(409, 'PROTECTED_ROOTS', 'Main folders cannot be moved')
+        await assertSubtreeAccess(tx, actor, (await categorySubtree(tx, id)).map(row => row.id))
         if (parentId === id) throw new DomainError(422, 'SELF_PARENT', 'A category cannot be its own parent')
         let parent = null
         let cursorId = parentId
@@ -189,9 +188,13 @@ export function createCategoryService(prisma) {
     },
 
     async archive(id, actorId) {
+      const actor = await resolveActor(prisma, actorId)
+      await assertCategoryAccess(prisma, actor, id, { includeArchived: true })
       return prisma.$transaction(async tx => {
         const subtree = await categorySubtree(tx, id)
         const category = subtree[0]
+        if (!category.parentId || category.mainSlot) throw new DomainError(409, 'PROTECTED_ROOTS', 'Main folders cannot be archived or restored')
+        await assertSubtreeAccess(tx, actor, subtree.map(row => row.id))
         if (category.archivedAt) return clean(category)
         const archivedAt = new Date()
         const ids = subtree.map(item => item.id)
@@ -210,9 +213,13 @@ export function createCategoryService(prisma) {
     },
 
     async restore(id, actorId) {
+      const actor = await resolveActor(prisma, actorId)
+      await assertCategoryAccess(prisma, actor, id, { includeArchived: true })
       return prisma.$transaction(async tx => {
         const subtree = await categorySubtree(tx, id)
         const category = subtree[0]
+        if (!category.parentId || category.mainSlot) throw new DomainError(409, 'PROTECTED_ROOTS', 'Main folders cannot be archived or restored')
+        await assertSubtreeAccess(tx, actor, subtree.map(row => row.id))
         if (!category.archivedAt) return clean(category)
         if (category.parentId) {
           const parent = await tx.category.findUnique({ where: { id: category.parentId } })

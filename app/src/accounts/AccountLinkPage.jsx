@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import './accounts-access.css'
 
-const roleLabels = { ADMIN: 'Admin', VIP_VIEWER: 'VIP', NORMAL_VIEWER: 'Normal' }
+const roleLabels = { ADMIN: 'Admin', VIEWER: 'Viewer' }
 
 export default function AccountLinkPage({ mode }) {
   const [token] = useState(() => new URLSearchParams(window.location.search).get('token') || '')
@@ -38,6 +38,6 @@ export default function AccountLinkPage({ mode }) {
     <div className="account-link-mark">▣</div>
     <span>Government Data Management System</span>
     <h1>{mode === 'setup' ? 'Set Up Account' : 'Reset Account Login'}</h1>
-    {state.loading && !details ? <p>Link ကို စစ်ဆေးနေသည်...</p> : state.error && !details ? <div className="accounts-alert">{state.error}</div> : state.complete ? <><div className="account-success">✓ {mode === 'setup' ? 'Account setup completed.' : 'Password reset completed.'}</div><button className="accounts-primary" onClick={() => { window.location.href = '/' }}>Continue to Login</button></> : <form onSubmit={submit}><div className="link-identity"><b>{details?.name}</b><small>Email: {details?.email}</small>{mode === 'setup' && <small>Access: {roleLabels[details?.role]}</small>}</div>{state.error && <div className="accounts-alert">{state.error}</div>}<label>New Password<input type="password" required minLength="12" value={password} onChange={event => setPassword(event.target.value)} /></label><label>Confirm Password<input type="password" required minLength="12" value={confirm} onChange={event => setConfirm(event.target.value)} /></label><button className="accounts-primary" disabled={state.loading}>{state.loading ? 'Saving...' : mode === 'setup' ? 'Set Up Account' : 'Set New Password'}</button></form>}
+    {state.loading && !details ? <p>Link ကို စစ်ဆေးနေသည်...</p> : state.error && !details ? <div className="accounts-alert">{state.error}</div> : state.complete ? <><div className="account-success">✓ {mode === 'setup' ? 'Account setup completed.' : 'Password reset completed.'}</div><button className="accounts-primary" onClick={() => { window.location.href = '/' }}>Continue to Login</button></> : <form onSubmit={submit}><div className="link-identity"><b>{details?.name}</b><small>Email: {details?.email}</small>{mode === 'setup' && <small>Access: {roleLabels[details?.role]} · {details?.clearance}</small>}</div>{state.error && <div className="accounts-alert">{state.error}</div>}<label>New Password<input type="password" required minLength="12" value={password} onChange={event => setPassword(event.target.value)} /></label><label>Confirm Password<input type="password" required minLength="12" value={confirm} onChange={event => setConfirm(event.target.value)} /></label><button className="accounts-primary" disabled={state.loading}>{state.loading ? 'Saving...' : mode === 'setup' ? 'Set Up Account' : 'Set New Password'}</button></form>}
   </section></main>
 }

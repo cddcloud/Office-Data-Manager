@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import Login from './auth/LoginForm.jsx'
 import Categories from './categories/Categories.jsx'
 import { DataRecordsPage } from './records/FilteredModules.jsx'
-import { bootstrapSession, getUser, logout as clearSession, subscribeSessionExpired } from './api.js'
+import { api, bootstrapSession, getUser, logout as clearSession, subscribeSessionExpired } from './api.js'
 import AccountsAccess from './accounts/AccountsAccess.jsx'
-import ViewerDashboard from './viewer/ViewerDashboard.jsx'
+import ProductionDashboard from './viewer/ProductionDashboard.jsx'
+import WorkflowHeader from './shared/WorkflowHeader.jsx'
+import { canManageUsers, isContentAdmin } from './shared/access.js'
+import { useQueryClient } from '@tanstack/react-query'
 import AccountLinkPage from './accounts/AccountLinkPage.jsx'
 import { adminNavigation } from './admin-navigation.js'
 import './App.css'
@@ -35,7 +38,11 @@ function App(){
 function WorkspaceApp(){
   const [user,setUser]=useState(()=>getUser())
   const [checkingSession,setCheckingSession]=useState(true)
-  const [page,setPage]=useState('overview')
+  const [page,setPage]=useState(()=>window.location.pathname==='/dashboard/demo'?'preview':window.location.pathname.startsWith('/manage/')?window.location.pathname.split('/')[2]:'dashboard')
+  const [target,setTarget]=useState(null)
+  const [referenceAllowed,setReferenceAllowed]=useState(false)
+  const [referenceError,setReferenceError]=useState('')
+  const queryClient=useQueryClient()
   const [search,setSearch]=useState('')
   const [published,setPublished]=useState(true)
   const [presentation,setPresentation]=useState(false)
@@ -43,15 +50,22 @@ function WorkspaceApp(){
   const [collectionFilter,setCollectionFilter]=useState(null)
   const filtered=useMemo(()=>records.filter(r=>r.join(' ').toLowerCase().includes(search.toLowerCase())),[search])
   const enter=()=>{setPresentation(true);document.documentElement.requestFullscreen?.().catch(()=>{})}
-  const leave=()=>{document.exitFullscreen?.().catch(()=>{});setPresentation(false)}
-  const choosePage=(id)=>id==='preview'?enter():setPage(id)
-  const navItems=(items)=>items.map(([id,label,icon])=><button className={page===id?'active':''} onClick={()=>choosePage(id)} key={id} title={label}><em>{icon}</em><span className="nav-label">{label}</span></button>)
+  const leave=()=>{document.exitFullscreen?.().catch(()=>{});setPresentation(false);setPage('dashboard');window.history.pushState({},'', '/dashboard')}
+  const choosePage=(id)=>{setPresentation(false);setPage(id);window.history.pushState({},'',id==='dashboard'?'/dashboard':id==='preview'?'/dashboard/demo':`/manage/${id}`)}
+  const notifyTarget=notice=>{setTarget(notice);choosePage('dashboard')}
+  const navItems=(items)=>items.filter(([id])=>!['accounts','preview'].includes(id)||canManageUsers(user)).map(([id,label,icon])=><button className={page===id?'active':''} onClick={()=>choosePage(id)} key={id} title={label}><em>{icon}</em><span className="nav-label">{label}</span></button>)
   useEffect(()=>{let active=true;bootstrapSession().then(next=>{if(active)setUser(next)}).finally(()=>{if(active)setCheckingSession(false)});return()=>{active=false}},[])
-  useEffect(()=>subscribeSessionExpired(()=>setUser(null)),[])
+  useEffect(()=>subscribeSessionExpired(()=>{queryClient.clear();setUser(null)}),[queryClient])
+  useEffect(()=>{const change=()=>{const path=window.location.pathname;setPage(path==='/dashboard/demo'?'preview':path.startsWith('/manage/')?path.split('/')[2]:'dashboard')};window.addEventListener('popstate',change);return()=>window.removeEventListener('popstate',change)},[])
+  useEffect(()=>{let active=true;setReferenceAllowed(false);setReferenceError('');if(user&&canManageUsers(user)&&(page==='preview'||presentation))api('/dashboard/reference-access').then(()=>active&&setReferenceAllowed(true)).catch(error=>active&&setReferenceError(error.message));return()=>{active=false}},[user,page,presentation])
   if(checkingSession)return <main className="login"><div className="login-card"><div className="logo">GO</div><p>Session ကို စစ်ဆေးနေသည်...</p></div></main>
   if(!user)return <Login onLogin={setUser}/>
-  if(user.role!=='ADMIN')return <ViewerDashboard user={user} onLogout={()=>{setUser(null);void clearSession()}}/>
-  if(presentation)return <Dashboard published={published} onBack={leave}/>
+  const signOut=()=>{queryClient.clear();setUser(null);void clearSession()}
+  if(user.workflowReady===false)return <main className="login"><section className="login-card"><h1>Login ဝင်ပြီးပါပြီ</h1><p>{user.name} · {user.email}</p><p>လက်ရှိ database ကို workflow အသစ်သို့ မပြောင်းရသေးပါ။ Legacy account/content access levels နှင့် ရှိပြီးသား Main Folder IDs များအတွက် approved mapping လိုအပ်နေသောကြောင့် content pages များကို ယာယီပိတ်ထားပါသည်။</p><p>ရှိပြီးသား password နှင့် data များကို မပြောင်းထားပါ။</p><button onClick={()=>window.location.reload()}>ပြန်စစ်ရန်</button><button onClick={signOut}>Logout</button></section></main>
+  if(!isContentAdmin(user)){if(!['/','/dashboard'].includes(window.location.pathname))return <main className="workflow-dashboard"><p role="alert">ဤ Management page ကို ဝင်ရောက်ခွင့်မရှိပါ။</p><button onClick={()=>choosePage('dashboard')}>Open Dashboard</button></main>;return <ProductionDashboard user={user} onLogout={signOut} target={target}/>}
+  if(['accounts','preview'].includes(page)&&!canManageUsers(user))return <main className="workflow-dashboard"><p role="alert">ဤ page ကို ဝင်ရောက်ခွင့်မရှိပါ။</p><button onClick={()=>choosePage('dashboard')}>Open Dashboard</button></main>
+  if(presentation||page==='preview')return referenceAllowed?<><div className="demo-reference-label">Demo / Design Reference — sample values only <button onClick={leave}>Back to Dashboard</button></div><Dashboard published={published} onBack={leave}/></>:referenceError?<p role="alert">{referenceError} <button onClick={leave}>Back to Dashboard</button></p>:<p role="status">Checking reference access…</p>
+  if(page==='dashboard')return <ProductionDashboard user={user} onLogout={signOut} onManage={()=>choosePage('categories')} target={target}/>
   return <div className="app drawer-shell">
     <aside className="temporary-drawer" aria-label="ပင်မလမ်းညွှန်">
       <div className="drawer-brand"><div className="drawer-mark">▤</div><div className="drawer-brand-copy"><b>အစိုးရရုံး အချက်အလက်စနစ်</b><small>Government Data Management System</small></div></div>
@@ -63,12 +77,13 @@ function WorkspaceApp(){
       <div className="side-foot"><button onClick={()=>{setUser(null);void clearSession()}} title="Logout"><em>↩</em><span className="foot-label">Logout</span></button><small>ဗားရှင်း 1.0.0<br/>© ၂၀၂၆ အစိုးရ အချက်အလက်စနစ်</small></div>
     </aside>
     <main className="main">
-      <header className="workspace-header"><div className="header-page-title"><span>{nav.find(n=>n[0]===page)?.[1]}</span></div><div className="profile"><button className="notification-button" aria-label="အသိပေးချက် ၅ ခု"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span>5</span></button><span className="avatar">{user.name?.slice(0,2).toUpperCase()}</span><div><b>{user.name}</b><small>{user.isPrimaryAdmin?'Main Administrator':'Administrator'}</small></div></div></header>
-      {!['entry','categories','accounts'].includes(page)&&<div className="page-context"><small>Workspace / {nav.find(n=>n[0]===page)?.[1]}</small><h2>{nav.find(n=>n[0]===page)?.[1]}</h2></div>}
+      <header className="workspace-header"><div className="header-page-title"><span>{nav.find(n=>n[0]===page)?.[1]}</span></div><WorkflowHeader user={user} onLogout={signOut} onTarget={notifyTarget}/></header>
+      {!['entry','categories','accounts','dashboard'].includes(page)&&<div className="page-context"><small>Workspace / {nav.find(n=>n[0]===page)?.[1]}</small><h2>{nav.find(n=>n[0]===page)?.[1]}</h2></div>}
+      {page==='dashboard'&&<ProductionDashboard embedded user={user} onLogout={signOut} target={target}/>}
       {page==='overview'&&<Overview go={setPage}/>}
       {page==='categories'&&<Categories onViewData={(categoryId,collectionId)=>{setCategoryFilter(categoryId);setCollectionFilter(collectionId);setPage('entry')}}/>}
       {page==='entry'&&<DataRecordsPage categoryId={categoryFilter} dataCollectionId={collectionFilter} onOpenCollection={setCollectionFilter} onClearCollection={()=>setCollectionFilter(null)}/>} {page==='activity'&&<Activity/>}
-      {page==='accounts'&&<AccountsAccess/>} {page==='preview'&&<Preview published={published} setPublished={setPublished} open={enter}/>}
+      {page==='accounts'&&<AccountsAccess user={user}/>} {page==='preview'&&<Preview published={published} setPublished={setPublished} open={enter}/>}
     </main>
   </div>
 }

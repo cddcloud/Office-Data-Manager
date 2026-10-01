@@ -1,4 +1,5 @@
 import express from 'express'
+import { notificationRoutes } from './modules/notifications/notification.routes.js'
 import compression from 'compression'
 import cors from 'cors'
 import rateLimit from 'express-rate-limit'
@@ -13,7 +14,7 @@ import { categoryRoutes } from './modules/categories/category.routes.js'
 import { documentRoutes } from './modules/documents/document.routes.js'
 import { dataRoutes } from './modules/data/data.routes.js'
 import { accountLinkRoutes, userRoutes } from './modules/users/user.routes.js'
-import { importRoutes } from './modules/imports/import.routes.js'
+import { importRoutes, sourceWorkbookRoutes } from './modules/imports/import.routes.js'
 import { createStorage } from './lib/storage.js'
 import { adminDashboardRoutes, viewerDashboardRoutes } from './modules/dashboard/dashboard.routes.js'
 import { auditRoutes } from './modules/audit/audit.routes.js'
@@ -24,9 +25,10 @@ export function createApp(prisma = defaultPrisma, storage = createStorage()) {
   const app = express()
   app.disable('x-powered-by')
   app.use(helmet())
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'private, no-store'); next() })
   app.use(cors({ origin: allowedOrigins(), credentials: true }))
   app.use(compression())
-  app.use(pinoHttp({ logger, enabled: process.env.NODE_ENV !== 'test' }))
+  app.use(pinoHttp({ logger, enabled: process.env.NODE_ENV !== 'test', serializers: { req: req => ({ id: req.id, method: req.method, path: req.url?.split('?')[0] }) } }))
   app.use('/api', rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 500,
@@ -58,6 +60,8 @@ export function createApp(prisma = defaultPrisma, storage = createStorage()) {
   app.use('/api/admin/audit', auditRoutes(prisma))
   app.use('/api/admin/reports', reportRoutes(prisma))
   app.use('/api/admin/trash', trashRoutes(prisma, storage))
+  app.use('/api/sources', sourceWorkbookRoutes(prisma, storage))
+  app.use('/api/notifications', notificationRoutes(prisma))
   app.use('/api/categories', categoryRoutes(prisma))
   app.use('/api/data', dataRoutes(prisma))
   app.use('/api/documents', documentRoutes(prisma, storage))

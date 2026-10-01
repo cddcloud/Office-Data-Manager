@@ -28,14 +28,16 @@ describe('dashboard widget validation', () => {
   it('lists widgets for one collection and previews an unsaved configuration server-side', async () => {
     const findMany = vi.fn(async () => [])
     const prisma = {
+      user:{findUnique:async({where})=>({id:where.id,role:'ADMIN',clearance:'V1',isActive:true})},
+      category:{findMany:async()=>[{id:'category-1',parentId:null,accessLevel:'V4',archivedAt:null}]},
       dataCollection: { findFirst: vi.fn(async () => ({ id: 'collection-1', fields })) },
       dashboardWidget: { findMany },
       $queryRaw: vi.fn(async () => [{ value: 7 }]),
     }
     const service = createDashboardService(prisma)
-    await service.listAdmin('collection-1')
+    await service.listAdmin('collection-1',{role:'ADMIN',clearance:'V1'})
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ dataCollectionId: 'collection-1' }) }))
-    const preview = await service.previewConfiguration({ title: 'Total records', dataCollectionId: 'collection-1', chartType: 'KPI', aggregation: 'COUNT', accessLevel: 'NORMAL', sortOrder: 0, isActive: true })
+    const preview = await service.previewConfiguration({ title: 'Total records', dataCollectionId: 'collection-1', chartType: 'KPI', aggregation: 'COUNT', accessLevel: 'V4', sortOrder: 0, isActive: true },{role:'ADMIN',clearance:'V1'})
     expect(preview.data).toEqual({ value: 7 })
     expect(preview.widget.dataCollectionId).toBe('collection-1')
   })
@@ -44,6 +46,8 @@ describe('dashboard widget validation', () => {
     let widget = null
     const audits = []
     const prisma = {
+      user:{findUnique:async({where})=>({id:where.id,role:'ADMIN',clearance:'V1',isActive:true})},
+      category:{findMany:async()=>[{id:'category-1',parentId:null,accessLevel:'V4',archivedAt:null}]},
       dataCollection: { findFirst: vi.fn(async () => ({ id: 'collection-1', fields })) },
       dashboardWidget: {
         create: vi.fn(async ({ data }) => { widget = { id: 'widget-1', archivedAt: null, ...data }; return widget }),
@@ -54,7 +58,7 @@ describe('dashboard widget validation', () => {
       $transaction: callback => callback(prisma),
     }
     const service = createDashboardService(prisma)
-    const created = await service.create({ title: 'Records', dataCollectionId: 'collection-1', chartType: 'KPI', aggregation: 'COUNT', accessLevel: 'NORMAL', sortOrder: 0, isActive: true }, 'admin-1')
+    const created = await service.create({ title: 'Records', dataCollectionId: 'collection-1', chartType: 'KPI', aggregation: 'COUNT', accessLevel: 'V4', sortOrder: 0, isActive: true }, 'admin-1')
     expect(created).toMatchObject({ createdById: 'admin-1', updatedById: 'admin-1' })
     const updated = await service.update(created.id, { title: 'All Records' }, 'admin-2')
     expect(updated.updatedById).toBe('admin-2')
@@ -66,11 +70,11 @@ describe('dashboard widget validation', () => {
       .mockResolvedValueOnce([{ value: 3 }])
       .mockResolvedValueOnce([{ value: 75.5 }])
       .mockResolvedValueOnce([{ label: new Date('2026-01-01T00:00:00.000Z'), value: 2 }])
-    const prisma = { $queryRaw: queryRaw }
+    const prisma = { category:{findMany:async()=>[{id:'category-1',parentId:null,accessLevel:'V4',archivedAt:null}]}, $queryRaw: queryRaw }
     const base = { dataCollectionId: 'collection-1', savedFilters: null }
-    await expect(aggregateWidget(prisma, { ...base, chartType: 'KPI', aggregation: 'COUNT' }, 'ADMIN')).resolves.toEqual({ value: 3 })
-    await expect(aggregateWidget(prisma, { ...base, chartType: 'KPI', aggregation: 'SUM', measureField: { key: 'amount' } }, 'ADMIN')).resolves.toEqual({ value: 75.5 })
-    await expect(aggregateWidget(prisma, { ...base, chartType: 'LINE', aggregation: 'COUNT', dimensionField: { key: 'date' }, timeGrouping: 'MONTH' }, 'ADMIN')).resolves.toEqual({ series: [{ label: '2026-01-01T00:00:00.000Z', value: 2 }] })
+    await expect(aggregateWidget(prisma, { ...base, chartType: 'KPI', aggregation: 'COUNT' }, { role: 'ADMIN', clearance: 'V1' })).resolves.toEqual({ value: 3 })
+    await expect(aggregateWidget(prisma, { ...base, chartType: 'KPI', aggregation: 'SUM', measureField: { key: 'amount' } }, { role: 'ADMIN', clearance: 'V1' })).resolves.toEqual({ value: 75.5 })
+    await expect(aggregateWidget(prisma, { ...base, chartType: 'LINE', aggregation: 'COUNT', dimensionField: { key: 'date' }, timeGrouping: 'MONTH' }, { role: 'ADMIN', clearance: 'V1' })).resolves.toEqual({ series: [{ label: '2026-01-01T00:00:00.000Z', value: 2 }] })
     expect(queryRaw).toHaveBeenCalledTimes(3)
   })
 })

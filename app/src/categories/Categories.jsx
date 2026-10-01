@@ -1,3 +1,5 @@
+import { useDialogFocus } from '../shared/useDialogFocus.js'
+import PdfPreview from '../shared/PdfPreview.jsx'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import ChevronRightRounded from '@mui/icons-material/ChevronRightRounded'
@@ -21,6 +23,8 @@ import SearchRounded from '@mui/icons-material/SearchRounded'
 import SortRounded from '@mui/icons-material/SortRounded'
 import UploadFileRounded from '@mui/icons-material/UploadFileRounded'
 import ViewListRounded from '@mui/icons-material/ViewListRounded'
+import { inputLevels, isMainAdmin, isContentAdmin } from '../shared/access.js'
+import '../shared/workflow.css'
 import { api, apiBlob } from '../api.js'
 import { SemanticFileIcon as ItemIcon } from '../shared/SemanticFileIcon.jsx'
 import { categoryKeys, useCategoryMutation, useCategoryTree, useFolderContents } from './category-queries.js'
@@ -28,6 +32,7 @@ import { categoryDescendantIds, createCutController, exitTrashThen, filterAndSor
 import './categories.css'
 
 const itemKey = item => `${item.itemType}:${item.id}`
+const protectedFolder = item => item?.itemType === 'FOLDER' && (item.mainSlot || item.parentId === null)
 const user = () => JSON.parse(sessionStorage.getItem('office_user') || '{}')
 
 function FolderTree({ nodes, selectedId, expanded, onToggle, onSelect, onContext, depth = 0 }) {
@@ -49,7 +54,7 @@ function FolderTree({ nodes, selectedId, expanded, onToggle, onSelect, onContext
 }
 
 function MoveDialog({ items, tree, onClose, onConfirm, busy, error }) {
-  const onlyFolders = items.every(item => item.itemType === 'FOLDER')
+  const dialog = useDialogFocus(true, () => !busy && onClose())
   const blocked = useMemo(() => {
     const ids = new Set()
     for (const item of items) {
@@ -61,7 +66,7 @@ function MoveDialog({ items, tree, onClose, onConfirm, busy, error }) {
     return ids
   }, [items, tree])
   const [query, setQuery] = useState('')
-  const [target, setTarget] = useState(onlyFolders ? '' : null)
+  const [target, setTarget] = useState(null)
   const destinations = useMemo(() => flattenCategories(tree).filter(folder => !blocked.has(folder.id) && folder.path.toLocaleLowerCase().includes(query.toLocaleLowerCase())), [blocked, query, tree])
   return <div className="fm-dialog-backdrop" onMouseDown={event => event.target === event.currentTarget && !busy && onClose()}>
     <section className="fm-dialog fm-move-dialog" role="dialog" aria-modal="true" aria-labelledby="move-dialog-title">
@@ -70,7 +75,6 @@ function MoveDialog({ items, tree, onClose, onConfirm, busy, error }) {
         <p className="fm-dialog-note"><DriveFileMoveOutlined /><span><b>{items.length} item{items.length > 1 ? 's' : ''}</b><small>ရွှေ့လိုသည့် Folder ကို ရွေးပါ</small></span></p>
         <label className="fm-dialog-search"><SearchRounded /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Folder ရှာရန်…" autoFocus /></label>
         <div className="fm-destination-list">
-          {onlyFolders && <button className={target === '' ? 'selected' : ''} onClick={() => setTarget('')}><HomeRounded /><span><b>Home</b><small>Root location</small></span></button>}
           {destinations.map(folder => <button key={folder.id} className={target === folder.id ? 'selected' : ''} onClick={() => setTarget(folder.id)}><FolderRounded /><span><b>{folder.name}</b><small>{folder.path}</small></span></button>)}
         </div>
         {error && <p className="fm-error" role="alert">{error}</p>}
@@ -81,13 +85,14 @@ function MoveDialog({ items, tree, onClose, onConfirm, busy, error }) {
 }
 
 function DetailsDialog({ item, location, onClose }) {
+  const dialog = useDialogFocus(true, onClose)
   const rows = item.itemType === 'FOLDER'
     ? [['Type', 'Folder'], ['Location', location], ['Items', item.sizeLabel], ['Created', formatDate(item.createdAt)], ['Created By', item.createdBy?.name || '—'], ['Modified', formatDate(item.updatedAt)], ['Modified By', item.updatedBy?.name || item.createdBy?.name || '—']]
     : item.itemType === 'DATA'
       ? [['Type', 'Structured Data'], ['Location', location], ['Records', item.sizeLabel], ['Fields', `${item.fields?.length || 0}`], ['Access', item.defaultAccessLevel], ['Created By', item.createdBy?.name || '—'], ['Modified', formatDate(item.updatedAt)], ['Modified By', item.updatedBy?.name || item.createdBy?.name || '—']]
       : [['Type', item.typeLabel], ['File name', item.fileName], ['Location', location], ['Size', item.sizeLabel], ['Access', item.accessLevel], ['Uploaded', formatDate(item.createdAt)], ['Created By', item.createdBy?.name || '—'], ['Modified', formatDate(item.updatedAt)], ['Modified By', item.updatedBy?.name || item.createdBy?.name || '—']]
   return <div className="fm-dialog-backdrop" onMouseDown={event => event.target === event.currentTarget && onClose()}>
-    <section className="fm-dialog fm-details-dialog" role="dialog" aria-modal="true" aria-labelledby="details-dialog-title">
+    <section ref={dialog} tabIndex={-1} className="fm-dialog fm-details-dialog" role="dialog" aria-modal="true" aria-labelledby="details-dialog-title">
       <header><div><small>Details</small><h2 id="details-dialog-title">{item.name}</h2></div><button onClick={onClose} aria-label="ပိတ်ရန်"><CloseRounded /></button></header>
       <div className="fm-details-hero"><span className={`fm-item-icon ${item.itemType.toLowerCase()}`}><ItemIcon type={item.itemType} /></span><div><b>{item.name}</b><small>{item.typeLabel}</small></div></div>
       <dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || '—'}</dd></div>)}</dl>
@@ -96,9 +101,11 @@ function DetailsDialog({ item, location, onClose }) {
   </div>
 }
 
-function UploadDialog({ upload, setUpload, folderId, onDone }) {
+function UploadDialog({ upload, setUpload, folderId, folderName, onDone }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [previewUrl, setPreviewUrl] = useState('')
+  useEffect(()=>{if(upload.mode!=='document')return;const url=URL.createObjectURL(upload.file);setPreviewUrl(url);return()=>URL.revokeObjectURL(url)},[upload.file,upload.mode])
 
   async function close() {
     if (upload.mode === 'excel' && upload.job?.id && upload.job.status !== 'COMPLETED') api(`/admin/imports/${upload.job.id}/cancel`, { method: 'POST' }).catch(() => {})
@@ -116,13 +123,18 @@ function UploadDialog({ upload, setUpload, folderId, onDone }) {
   async function confirm() {
     setBusy(true); setError('')
     try {
+      if (upload.mode === 'excel' && !upload.job) {
+        const body = new FormData(); body.append('file', upload.file); body.append('categoryId', folderId); body.append('accessLevel', upload.accessLevel)
+        const job = await api('/admin/imports/excel/inspect', {method:'POST',body,headers:{'Idempotency-Key':upload.operationKey}})
+        setUpload(current=>({...current,job,sheetName:job.inspection?.sheets?.[0]?.name||''}));return
+      }
       if (upload.mode === 'document') {
         const body = new FormData()
         body.append('file', upload.file)
         body.append('title', upload.title.trim())
         body.append('categoryId', folderId)
         body.append('accessLevel', upload.accessLevel)
-        await api('/admin/documents', { method: 'POST', body })
+        await api('/admin/documents', { method: 'POST', body, headers: {'Idempotency-Key':upload.operationKey} })
       } else {
         const job = await api(`/admin/imports/${upload.job.id}/commit`, { method: 'POST', body: JSON.stringify({ collectionName: upload.collectionName.trim(), defaultAccessLevel: upload.accessLevel }) })
         setUpload(current => ({ ...current, job }))
@@ -132,29 +144,32 @@ function UploadDialog({ upload, setUpload, folderId, onDone }) {
     } catch (requestError) { setError(requestError.message) } finally { setBusy(false) }
   }
 
+  const dialog = useDialogFocus(true, () => !busy && close())
   const inspection = upload.job?.inspection || {}
   const preview = inspection.preview || []
   const fields = inspection.fields || []
   const needsSheet = Boolean(inspection.requiresSheetSelection)
   return <div className="fm-dialog-backdrop">
-    <section className="fm-dialog fm-upload-dialog" role="dialog" aria-modal="true" aria-labelledby="upload-dialog-title">
+    <section ref={dialog} tabIndex={-1} className="fm-dialog fm-upload-dialog" role="dialog" aria-modal="true" aria-labelledby="upload-dialog-title">
       <header><div><small>Add File</small><h2 id="upload-dialog-title">{upload.mode === 'excel' ? 'Import Excel Data' : 'Upload Document'}</h2></div><button onClick={close} disabled={busy} aria-label="ပိတ်ရန်"><CloseRounded /></button></header>
       <div className="fm-dialog-body">
+        <p>Destination: <b>{folderName}</b></p>
         <p className="fm-dialog-note"><ItemIcon type={upload.mode === 'excel' ? 'DATA' : upload.file.type === 'application/pdf' ? 'PDF' : 'IMAGE'} /><span><b>{upload.file?.name || upload.job?.originalFileName}</b><small>{upload.mode === 'excel' ? 'Database ထဲသို့ structured data အဖြစ် import လုပ်မည်' : 'ရွေးထားသည့် Folder ထဲသို့ upload လုပ်မည်'}</small></span></p>
         {upload.mode === 'document' ? <>
           <label className="fm-field">Title<input value={upload.title} onChange={event => setUpload(current => ({ ...current, title: event.target.value }))} autoFocus /></label>
-          <label className="fm-field">Access<select value={upload.accessLevel} onChange={event => setUpload(current => ({ ...current, accessLevel: event.target.value }))}><option value="NORMAL">Normal</option><option value="VIP">VIP</option><option value="ADMIN">Admin only</option></select></label>
+          <label className="fm-field">Access<select value={upload.accessLevel} onChange={event => setUpload(current => ({ ...current, accessLevel: event.target.value }))}>{inputLevels(upload.job?.accessLevel).map(level=><option key={level}>{level}</option>)}</select></label>
         </> : <>
           {needsSheet ? <div className="fm-sheet-select"><label className="fm-field">Worksheet<select value={upload.sheetName} onChange={event => setUpload(current => ({ ...current, sheetName: event.target.value }))}>{inspection.sheets?.map(sheet => <option key={sheet.name}>{sheet.name}</option>)}</select></label><button onClick={inspectSheet} disabled={busy}>Preview sheet</button></div> : <>
             <label className="fm-field">Data name<input value={upload.collectionName} onChange={event => setUpload(current => ({ ...current, collectionName: event.target.value }))} /></label>
-            <label className="fm-field">Access<select value={upload.accessLevel} onChange={event => setUpload(current => ({ ...current, accessLevel: event.target.value }))}><option value="NORMAL">Normal</option><option value="VIP">VIP</option><option value="ADMIN">Admin only</option></select></label>
-            <div className="fm-import-summary"><span><b>{upload.job.validRows || 0}</b> valid rows</span><span className={upload.job.invalidRows ? 'danger' : ''}><b>{upload.job.invalidRows || 0}</b> invalid rows</span><span><b>{fields.length}</b> fields</span></div>
+            <label className="fm-field">Content level<select value={upload.accessLevel} onChange={event => setUpload(current => ({ ...current, accessLevel: event.target.value }))}>{inputLevels(upload.job?.accessLevel).map(level => <option key={level} value={level}>{level}</option>)}</select></label>
+            <div className="fm-import-summary"><span><b>{upload.job?.validRows || 0}</b> valid rows</span><span className={upload.job?.invalidRows ? 'danger' : ''}><b>{upload.job?.invalidRows || 0}</b> invalid rows</span><span><b>{fields.length}</b> fields</span></div>
             {preview.length > 0 && <div className="fm-preview-table"><table><thead><tr><th>#</th>{fields.map(field => <th key={field.key}>{field.label}</th>)}</tr></thead><tbody>{preview.slice(0, 6).map(row => <tr key={row.rowNumber}><td>{row.rowNumber}</td>{fields.map(field => <td key={field.key}>{String(row.data[field.key] ?? '')}</td>)}</tr>)}</tbody></table></div>}
           </>}
         </>}
+        {previewUrl && (upload.file.type==='application/pdf'?<PdfPreview title={upload.file.name} url={previewUrl}/>:<img src={previewUrl} alt={upload.file.name}/>)}
         {error && <p className="fm-error" role="alert">{error}</p>}
       </div>
-      <footer><button onClick={close} disabled={busy}>Cancel</button><button className="primary" onClick={confirm} disabled={busy || (upload.mode === 'document' ? !upload.title.trim() : needsSheet || !upload.collectionName.trim() || upload.job.invalidRows > 0)}>{busy ? 'Working…' : upload.mode === 'excel' ? 'Import data' : 'Upload'}</button></footer>
+      <footer><button onClick={close} disabled={busy}>Cancel</button><button className="primary" onClick={confirm} disabled={busy || (upload.mode === 'document' ? !upload.title.trim() : needsSheet || !upload.collectionName.trim() || upload.job?.invalidRows > 0)}>{busy ? 'Working…' : upload.mode === 'excel' ? upload.job ? 'Commit import' : 'Inspect workbook' : 'Upload'}</button></footer>
     </section>
   </div>
 }
@@ -170,12 +185,12 @@ export function ContextMenu({ menu, onClose, onOpen, onNewFolder, onAddFile, onR
     <button onClick={onOpen}><OpenInNewRounded />Open</button>
     {menu.fromTree && <button onClick={onNewFolder}><CreateNewFolderOutlined />New Folder</button>}
     {menu.fromTree && <button onClick={onAddFile}><UploadFileRounded />Add File</button>}
-    <button onClick={onRename}><EditOutlined />Rename</button>
-    <button onClick={onMove}><DriveFileMoveOutlined />Move to…</button>
-    <button onClick={onCut}><ContentCutRounded />Cut <kbd>Ctrl + X</kbd></button>
+    {(!protectedFolder(menu.item)||isMainAdmin(user()))&&<button onClick={onRename}><EditOutlined />Rename</button>}
+    {!protectedFolder(menu.item)&&<button onClick={onMove}><DriveFileMoveOutlined />Move to…</button>}
+    {!protectedFolder(menu.item)&&<button onClick={onCut}><ContentCutRounded />Cut <kbd>Ctrl + X</kbd></button>}
     <button onClick={onDetails}><InfoOutlined />Details</button>
     <hr />
-    <button className="danger" onClick={onDelete}><DeleteOutlineRounded />Delete</button>
+    {!protectedFolder(menu.item)&&<button className="danger" onClick={onDelete}><DeleteOutlineRounded />Delete</button>}
   </div>
 }
 
@@ -224,13 +239,16 @@ export default function Categories({ onViewData }) {
   const tree = useMemo(() => treeQuery.data || [], [treeQuery.data])
   const contents = useMemo(() => selectedFolderId ? contentsQuery.data : { folders: tree, dataItems: [], documents: [], breadcrumb: [] }, [contentsQuery.data, selectedFolderId, tree])
   const allItems = useMemo(() => normalizeFileManagerItems(contents || {}), [contents])
-  const visibleItems = useMemo(() => filterAndSortItems(allItems, search, sortBy), [allItems, search, sortBy])
+  const visibleItems = useMemo(() => {
+    const items = filterAndSortItems(allItems, search, sortBy)
+    return selectedFolderId ? items : items.sort((a, b) => (a.mainSlot || 7) - (b.mainSlot || 7))
+  }, [allItems, search, sortBy, selectedFolderId])
   const visibleTrash = useMemo(() => filterAndSortItems(trash.items.map(item => ({ ...item, updatedAt: item.archivedAt })), search, sortBy), [trash.items, search, sortBy])
   const selectedItems = useMemo(() => allItems.filter(item => selection.has(itemKey(item))), [allItems, selection])
   const location = selectedFolderId ? `Home / ${(contents?.breadcrumb || []).map(item => item.name).join(' / ')}` : 'Home'
   const cutKeys = useMemo(() => new Set(cutItems.map(itemKey)), [cutItems])
   const displayedExpanded = useMemo(() => expanded.size ? expanded : new Set(tree.map(folder => folder.id)), [expanded, tree])
-  const canManage = user().role === 'ADMIN'
+  const canManage = isContentAdmin(user())
   useEffect(() => { selectedFolderRef.current = selectedFolderId }, [selectedFolderId])
   useEffect(() => {
     if (!trashMode) return undefined
@@ -305,6 +323,7 @@ export default function Categories({ onViewData }) {
   }
 
   function beginNewFolder(parentId = selectedFolderId) {
+    if (!parentId) {setNotice('Main Folder တစ်ခုကို ရွေးပါ');return}
     return exitTrashThen(setTrashMode, () => {
       if (parentId !== selectedFolderId) navigateToFolder(parentId)
       newFolderBlurAction.current = ''
@@ -317,7 +336,7 @@ export default function Categories({ onViewData }) {
   async function createFolder() {
     const name = newFolderName.trim()
     setNewFolder(false); setNewFolderName('')
-    if (!name) return
+    if (!name || !selectedFolderId) return
     try {
       await categoryMutation.mutateAsync({ mode: selectedFolderId ? 'child' : 'root', category: { id: selectedFolderId }, values: { name, ...(selectedFolderId ? { parentId: selectedFolderId } : {}) } })
       setNotice('Folder created')
@@ -325,6 +344,7 @@ export default function Categories({ onViewData }) {
   }
 
   async function renameItem(item, name) {
+    if (protectedFolder(item)&&!isMainAdmin(user()))return
     const cleanName = name.trim()
     setRename(null)
     if (!cleanName || cleanName === item.name) return
@@ -338,6 +358,7 @@ export default function Categories({ onViewData }) {
   }
 
   async function move(item, targetFolderId) {
+    if(protectedFolder(item)||!targetFolderId)throw new Error('Main folders are protected; select a child destination')
     if (item.itemType === 'FOLDER') return categoryMutation.mutateAsync({ mode: 'move', category: item, values: { parentId: targetFolderId || null } })
     if (!targetFolderId) throw new Error('Data နှင့် Document ကို Home root သို့ မရွှေ့နိုင်ပါ။ Folder တစ်ခုရွေးပါ။')
     if (item.itemType === 'DATA') return api(`/admin/data/collections/${item.id}`, { method: 'PATCH', body: JSON.stringify({ categoryId: targetFolderId }) })
@@ -365,13 +386,13 @@ export default function Categories({ onViewData }) {
 
   function startRename(item) {
     const target = item || selectedItems[0]
-    if (!target || (!item && selectedItems.length > 1)) return
+    if (!target || (protectedFolder(target)&&!isMainAdmin(user())) || (!item && selectedItems.length > 1)) return
     renameBlurAction.current = ''
     setMenu(null); setRename({ key: itemKey(target), name: target.name, item: target })
   }
 
   function cut(items = selectedItems) {
-    if (!items.length) return
+    if (!items.length || items.some(protectedFolder)) return
     cutController.current.set(items); setCutItems(items); setMenu(null); setNotice(`${items.length} item cut — destination Folder တွင် Ctrl + V နှိပ်ပါ`)
   }
 
@@ -380,16 +401,10 @@ export default function Categories({ onViewData }) {
     event.target.value = ''
     if (!file || !uploadFolderId) return
     setError('')
-    if (file.name.toLocaleLowerCase().endsWith('.xlsx')) {
-      setBusy(true)
-      try {
-        const body = new FormData(); body.append('file', file); body.append('categoryId', uploadFolderId)
-        const job = await api('/admin/imports/excel/inspect', { method: 'POST', body })
-        setUpload({ mode: 'excel', file, job, collectionName: file.name.replace(/\.xlsx$/i, ''), accessLevel: 'NORMAL', sheetName: job.inspection?.sheets?.[0]?.name || '' })
-      } catch (requestError) { setError(requestError.message) } finally { setBusy(false) }
-    } else {
-      setUpload({ mode: 'document', file, title: file.name.replace(/\.(pdf|jpe?g)$/i, ''), accessLevel: 'NORMAL' })
-    }
+    const operationKey=crypto.randomUUID()
+    if (file.name.toLocaleLowerCase().endsWith('.xlsx')) setUpload({mode:'excel',file,job:null,collectionName:file.name.replace(/\.xlsx$/i,''),accessLevel:inputLevels().at(-1)||'V4',sheetName:'',operationKey})
+    else if (/\.(pdf|jpe?g)$/i.test(file.name)) setUpload({mode:'document',file,title:file.name.replace(/\.(pdf|jpe?g)$/i,''),accessLevel:inputLevels().at(-1)||'V4',operationKey})
+    else setError('Only .xlsx, PDF and JPG files are supported')
   }
 
   function requestAddFile(explicitFolderId = null) {
@@ -403,11 +418,13 @@ export default function Categories({ onViewData }) {
   }
 
   function requestMove() {
+    if (selectedItems.some(protectedFolder)) {setNotice('Main folders cannot be moved');return}
     if (!selectedItems.length) { setNotice('ရွှေ့လိုသည့် item ကို အရင်ရွေးပါ'); return }
     setMoveItems(selectedItems)
   }
 
   async function moveToTrash(item) {
+    if(protectedFolder(item))return
     setBusy(true); setError('')
     try {
       const path = item.itemType === 'FOLDER' ? `/admin/categories/${item.id}/archive` : item.itemType === 'DATA' ? `/admin/data/collections/${item.id}/archive` : `/admin/documents/${item.id}/archive`
@@ -462,10 +479,10 @@ export default function Categories({ onViewData }) {
     <main className="fm-main">
       <div className="fm-toolbar">
         <div className="fm-toolbar-primary">
-          <button className="primary" onClick={() => beginNewFolder()} disabled={!canManage}><CreateNewFolderOutlined />New Folder<KeyboardArrowDownRounded /></button>
+          <button className="primary" onClick={() => beginNewFolder()} disabled={!canManage||!selectedFolderId}><CreateNewFolderOutlined />New Folder<KeyboardArrowDownRounded /></button>
           <button onClick={() => requestAddFile()} disabled={!canManage || busy}><UploadFileRounded />Add File<KeyboardArrowDownRounded /></button>
           <input ref={fileInput} type="file" accept=".xlsx,.pdf,.jpg,.jpeg" onChange={chooseFile} hidden />
-          <button onClick={requestMove} disabled={!canManage || trashMode}><DriveFileMoveOutlined />Move to</button>
+          <button onClick={requestMove} disabled={!canManage || trashMode || selectedItems.some(protectedFolder)}><DriveFileMoveOutlined />Move to</button>
           <button className={trashMode ? 'active' : ''} onClick={toggleTrash} disabled={!canManage}><HistoryRounded />Recently Deleted</button>
         </div>
         <div className="fm-toolbar-tools">
@@ -511,11 +528,11 @@ export default function Categories({ onViewData }) {
       <footer className="fm-status"><span>{trashMode ? visibleTrash.length : visibleItems.length} item{(trashMode ? visibleTrash.length : visibleItems.length) === 1 ? '' : 's'}{!trashMode && selection.size ? ` · ${selection.size} selected` : ''}</span>{!trashMode && <div><span><kbd>Ctrl + A</kbd> Select all</span><span><kbd>Ctrl + X</kbd> Cut</span><span><kbd>Ctrl + V</kbd> Paste (Move)</span><span><kbd>Ctrl + Shift + N</kbd> New Folder</span><span><kbd>F2</kbd> Rename</span><span><kbd>Enter</kbd> Open</span></div>}</footer>
     </main>
 
-    {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} onOpen={() => openItem(menu.item)} onNewFolder={() => beginNewFolder(menu.item.id)} onAddFile={() => { setMenu(null); requestAddFile(menu.item.id) }} onRename={() => { if (menu.fromTree) navigateToFolder(menu.item.parentId || null); startRename(menu.item) }} onMove={() => { setMoveItems(menu.fromTree || !selection.has(itemKey(menu.item)) ? [menu.item] : selectedItems); setMenu(null) }} onCut={() => cut(menu.fromTree || !selection.has(itemKey(menu.item)) ? [menu.item] : selectedItems)} onDetails={() => { setDetailsItem(menu.item); setMenu(null) }} onDelete={() => { setDeleteItem(menu.item); setMenu(null) }} />}
+    {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} onOpen={() => openItem(menu.item)} onNewFolder={() => beginNewFolder(menu.item.id)} onAddFile={() => { setMenu(null); requestAddFile(menu.item.id) }} onRename={() => { if (menu.fromTree) navigateToFolder(menu.item.parentId || null); startRename(menu.item) }} onMove={() => { if(!protectedFolder(menu.item))setMoveItems(menu.fromTree || !selection.has(itemKey(menu.item)) ? [menu.item] : selectedItems); setMenu(null) }} onCut={() => cut(menu.fromTree || !selection.has(itemKey(menu.item)) ? [menu.item] : selectedItems)} onDetails={() => { setDetailsItem(menu.item); setMenu(null) }} onDelete={() => { if(!protectedFolder(menu.item))setDeleteItem(menu.item); setMenu(null) }} />}
     {moveItems && <MoveDialog items={moveItems} tree={tree} onClose={() => { setMoveItems(null); setError('') }} onConfirm={confirmMove} busy={busy} error={error} />}
     {detailsItem && <DetailsDialog item={detailsItem} location={detailsItem.originalLocation || location} onClose={() => setDetailsItem(null)} />}
     {deleteItem && <DeleteDialog item={deleteItem} permanent={deleteItem.permanent} busy={busy} error={error} onClose={() => { setDeleteItem(null); setError('') }} onConfirm={() => deleteItem.permanent ? purgeTrashItem(deleteItem) : moveToTrash(deleteItem)} />}
-    {upload && <UploadDialog upload={upload} setUpload={setUpload} folderId={uploadFolderId} onDone={async () => { await refresh(); setNotice('File added successfully') }} />}
+    {upload && <UploadDialog upload={upload} setUpload={setUpload} folderId={uploadFolderId} folderName={flattenCategories(tree).find(folder => folder.id === uploadFolderId)?.name || 'Selected folder'} onDone={async () => { await refresh(); setNotice('File added successfully') }} />}
     {notice && <div className="fm-toast">{notice}</div>}
   </section>
 }

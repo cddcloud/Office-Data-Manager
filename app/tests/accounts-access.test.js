@@ -11,8 +11,7 @@ const enhancementCss = fs.readFileSync(path.resolve(process.cwd(), 'src/accounts
 describe('User & Access acceptance UI', () => {
   it('uses the final role labels and assignment order without exposing Main Admin', () => {
     expect(accountAccessOptions).toEqual([
-      { value: 'NORMAL_VIEWER', label: 'Normal' },
-      { value: 'VIP_VIEWER', label: 'VIP' },
+      { value: 'VIEWER', label: 'Viewer' },
       { value: 'ADMIN', label: 'Admin' },
     ])
     expect(accountAccessOptions.some(option => option.label === 'Main Admin')).toBe(false)
@@ -31,16 +30,16 @@ describe('User & Access acceptance UI', () => {
     expect(source).toContain('Setup Required')
     expect(source).toContain('Deactivated')
     expect(source).toContain('Search users...')
-    expect(source).toContain('All Role')
+    expect(source).toContain('All levels')
     expect(source).toContain('All Status')
     expect(source).toContain('<th>No</th>')
     expect(source).toContain('{index + 1}')
-    expect(source).toContain('setChangeAccess({ ...row, nextRole: row.role })')
+    expect(source).toContain('setChangeAccess({ ...row, nextClearance: row.clearance })')
   })
 
   it('keeps Search, Role, Status, and Add Account in one desktop toolbar', () => {
     const toolbar = source.slice(source.indexOf('<div className="accounts-toolbar account-filter-toolbar">'), source.indexOf('</div>\n      {loading ?'))
-    for (const item of ['Search users...', 'Filter by role', 'Filter by status', 'Add Account']) expect(toolbar).toContain(item)
+    for (const item of ['Search users...', 'Filter by clearance', 'Filter by status', 'Add Viewer']) expect(toolbar).toContain(item)
     expect(source).not.toContain('accounts-top-actions')
     expect(enhancementCss).toContain('width:400px')
     expect(enhancementCss).toContain('.account-toolbar-add{margin-left:auto')

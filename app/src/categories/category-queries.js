@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api.js'
+import { api, apiEnvelope } from '../api.js'
 
 export const categoryKeys = {
   all: ['file-manager'],
@@ -21,7 +21,7 @@ export async function folderContentsRequest(folderId) {
   const [details, dataItems, documents] = await Promise.all([
     api(`/categories/${folderId}`),
     api(`/data/collections?categoryId=${encodeURIComponent(folderId)}`),
-    api(`/documents?categoryId=${encodeURIComponent(folderId)}&includeDescendants=false&limit=100`),
+    allDocuments(folderId),
   ])
   return {
     folder: details.category,
@@ -30,6 +30,19 @@ export async function folderContentsRequest(folderId) {
     dataItems: dataItems || [],
     documents: documents || [],
   }
+}
+
+async function allDocuments(folderId) {
+  const result = []
+  let cursor
+  do {
+    const params = new URLSearchParams({ categoryId: folderId, includeDescendants: 'false', limit: '100' })
+    if (cursor) params.set('cursor', cursor)
+    const page = await apiEnvelope(`/documents?${params}`)
+    result.push(...page.data)
+    cursor = page.meta?.nextCursor
+  } while (cursor)
+  return result
 }
 
 export function useFolderContents(folderId) {
@@ -43,7 +56,8 @@ export function useFolderContents(folderId) {
 
 export function categoryMutationRequest({ mode, category, values }) {
   const base = '/admin/categories'
-  if (mode === 'root' || mode === 'child') return api(base, { method: 'POST', body: JSON.stringify(values) })
+  if (mode === 'root' || (mode === 'child' && !values.parentId)) throw new Error('Main folders are protected; select a destination folder')
+  if (mode === 'child') return api(base, { method: 'POST', body: JSON.stringify(values) })
   if (mode === 'edit') return api(`${base}/${category.id}`, { method: 'PATCH', body: JSON.stringify(values) })
   if (mode === 'move') return api(`${base}/${category.id}/move`, { method: 'POST', body: JSON.stringify(values) })
   throw new Error('မသိရှိသော ဖိုင်တွဲလုပ်ဆောင်ချက်ဖြစ်ပါသည်။')

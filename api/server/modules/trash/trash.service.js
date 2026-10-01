@@ -1,3 +1,4 @@
+import { allowedAccessLevels, authorizedCategoryIds, assertCategoryAccess, assertSubtreeAccess, collectionWhere, contentWhere, resolveActor } from '../../lib/access.js'
 import { createAuditService } from '../../lib/audit.js'
 import { DomainError, notFound } from '../../lib/errors.js'
 import { createCategoryService } from '../categories/category.service.js'
@@ -58,16 +59,20 @@ export function createTrashService(prisma, storage) {
   const data = createDataService(prisma)
   const documents = createDocumentService(prisma, storage)
 
-  async function list() {
+  async function list(actor) {
+    const ids = actor ? await authorizedCategoryIds(prisma, actor, { includeArchived: true }) : null
+    const categoryScope = ids ? { id: { in: ids } } : {}
+    const datasetScope = actor ? await collectionWhere(prisma, actor, true) : {}
+    const documentScope = actor ? await contentWhere(prisma, actor, 'document', true) : {}
     const [categoryRows, collectionRows, documentRows] = await Promise.all([
-      prisma.category.findMany({ select: { id: true, name: true, parentId: true, archivedAt: true, updatedAt: true } }),
-      prisma.dataCollection.findMany({ where: { archivedAt: { not: null } }, select: { id: true, name: true, categoryId: true, archivedAt: true, updatedAt: true, _count: { select: { records: true } } } }),
-      prisma.document.findMany({ where: { archivedAt: { not: null } }, select: { id: true, title: true, categoryId: true, archivedAt: true, updatedAt: true, fileSize: true, mimeType: true } }),
+      prisma.category.findMany({ where: categoryScope, select: { mainSlot: true, id: true, name: true, parentId: true, archivedAt: true, updatedAt: true } }),
+      prisma.dataCollection.findMany({ where: { ...datasetScope, archivedAt: { not: null } }, select: { id: true, name: true, categoryId: true, archivedAt: true, updatedAt: true, _count: { select: { records: actor ? { where: { accessLevel: { in: allowedAccessLevels(actor) } } } : true } } } }),
+      prisma.document.findMany({ where: { ...documentScope, archivedAt: { not: null } }, select: { id: true, title: true, categoryId: true, archivedAt: true, updatedAt: true, fileSize: true, mimeType: true } }),
     ])
     const byId = new Map(categoryRows.map(item => [item.id, item]))
     const items = []
     for (const category of categoryRows) {
-      if (!category.archivedAt || hasArchivedAncestor(byId, category)) continue
+      if (!category.parentId || category.mainSlot || !category.archivedAt || hasArchivedAncestor(byId, category)) continue
       items.push({ id: category.id, itemType: 'FOLDER', name: category.name, typeLabel: 'Folder', originalLocation: categoryPath(byId, category.id, false), archivedAt: category.archivedAt, autoDeleteAt: autoDeleteAt(category.archivedAt) })
     }
     for (const collection of collectionRows) {
@@ -92,6 +97,13 @@ export function createTrashService(prisma, storage) {
 
   async function purgeCollection(id, actorId, force) {
     const collection = await prisma.dataCollection.findUnique({ where: { id } })
+    if (actorId) {
+      const actor = await resolveActor(prisma, actorId)
+      if (!await prisma.dataCollection.findFirst({ where: { id, ...await collectionWhere(prisma, actor, true) } })) throw notFound('Content')
+      const levels = allowedAccessLevels(actor)
+      const denied = await Promise.all([prisma.dataRecord.count({ where: { dataCollectionId: id, accessLevel: { notIn: levels } } }), prisma.dashboardWidget.count({ where: { dataCollectionId: id, accessLevel: { notIn: levels } } }), prisma.importJob.count({ where: { dataCollectionId: id, OR: [{ accessLevel: null }, { accessLevel: { notIn: levels } }] } })])
+      if (denied.some(Boolean)) throw new DomainError(403, 'FORBIDDEN', 'The dataset includes content outside your clearance')
+    }
     if (!collection || !collection.archivedAt) throw notFound('Deleted structured data')
     if (!force && autoDeleteAt(collection.archivedAt) > new Date()) throw new DomainError(409, 'RETENTION_ACTIVE', 'This item is still inside its 30 day retention period')
     const imports = await prisma.importJob.findMany({ where: { dataCollectionId: id }, select: { storageKey: true } })
@@ -109,6 +121,7 @@ export function createTrashService(prisma, storage) {
 
   async function purgeDocument(id, actorId, force) {
     const document = await prisma.document.findUnique({ where: { id } })
+    if (actorId) { const actor = await resolveActor(prisma, actorId); if (!await prisma.document.findFirst({ where: { id, ...await contentWhere(prisma, actor, 'document', true) } })) throw notFound('Content') }
     if (!document || !document.archivedAt) throw notFound('Deleted document')
     if (!force && autoDeleteAt(document.archivedAt) > new Date()) throw new DomainError(409, 'RETENTION_ACTIVE', 'This item is still inside its 30 day retention period')
     await deleteStoredObjects(storage, [document.storageKey])
@@ -122,6 +135,8 @@ export function createTrashService(prisma, storage) {
   async function purgeFolder(id, actorId, force) {
     const subtree = await categorySubtree(prisma, id)
     const root = subtree[0]
+    if (!root.parentId || root.mainSlot) throw new DomainError(409, 'PROTECTED_ROOTS', 'Main folders cannot be purged')
+    if (actorId) { const actor = await resolveActor(prisma, actorId); await assertCategoryAccess(prisma, actor, id, { includeArchived: true }); await assertSubtreeAccess(prisma, actor, subtree.map(row => row.id)) }
     if (!root.archivedAt) throw notFound('Deleted folder')
     if (!force && autoDeleteAt(root.archivedAt) > new Date()) throw new DomainError(409, 'RETENTION_ACTIVE', 'This item is still inside its 30 day retention period')
     const ids = subtree.map(item => item.id)
@@ -152,11 +167,11 @@ export function createTrashService(prisma, storage) {
     throw new DomainError(422, 'INVALID_TRASH_TYPE', 'Unsupported trash item type')
   }
 
-  async function purgeExpired() {
-    const items = await list()
+  async function purgeExpired(actor) {
+    const items = await list(actor)
     const eligible = items.filter(item => new Date(item.autoDeleteAt) <= new Date())
     const purged = []
-    for (const item of eligible) purged.push(await purge(item.itemType.toLowerCase(), item.id, null))
+    for (const item of eligible) purged.push(await purge(item.itemType.toLowerCase(), item.id, actor?.id || null))
     return purged
   }
 

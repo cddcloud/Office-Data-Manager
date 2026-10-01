@@ -9,6 +9,6 @@ export function auditRoutes(prisma) {
   const router = Router()
   const service = createAuditService(prisma)
   router.use(requireRoles('ADMIN'))
-  router.get('/', async (req, res) => res.json(await service.query(querySchema.parse(req.query))))
+  router.get('/', async (req, res) => res.json(await service.query(querySchema.parse(req.query), req.user)))
   return router
 }

@@ -14,7 +14,7 @@ function memoryDatabase() {
     state,
     user: {
       findUnique: async ({ where, select }) => {
-        const row = state.users.find(item => item.id === where.id || item.email === where.email) || null
+        const row = state.users.find(item => item.id === where.id || item.email === where.email) || (where.id?.includes('admin') ? {id:where.id,role:'ADMIN',clearance:'V1',isActive:true} : null)
         return row ? pick(row, select) : null
       },
       findMany: async () => state.users,
@@ -85,11 +85,11 @@ describe('account invitation and reset lifecycle', () => {
   it('maps database uniqueness races to clean conflict responses', async () => {
     const inviteDb = memoryDatabase()
     inviteDb.accountInvite.create = async () => { throw Object.assign(new Error('unique'), { code: 'P2002' }) }
-    await expect(createUserService(inviteDb).invite({ email: 'race@example.test', name: 'Race', role: 'NORMAL_VIEWER' }, 'admin-1'))
+    await expect(createUserService(inviteDb).invite({ email: 'race@example.test', name: 'Race', role: 'VIEWER', clearance: 'V4', permissionVersion: 0 }, 'admin-1'))
       .rejects.toMatchObject({ status: 409, code: 'INVITATION_ALREADY_PENDING' })
 
     const resetDb = memoryDatabase()
-    resetDb.state.users.push({ id: 'viewer', email: 'viewer@example.test', name: 'Viewer', role: 'NORMAL_VIEWER', isActive: true, isPrimaryAdmin: false })
+    resetDb.state.users.push({ id: 'viewer', email: 'viewer@example.test', name: 'Viewer', role: 'VIEWER', clearance: 'V4', permissionVersion: 0, isActive: true, isPrimaryAdmin: false })
     resetDb.accountPasswordResetToken.create = async () => { throw Object.assign(new Error('unique'), { code: 'P2002' }) }
     await expect(createUserService(resetDb).resetLogin('viewer', 'admin-1'))
       .rejects.toMatchObject({ status: 409, code: 'RESET_ALREADY_IN_PROGRESS' })
@@ -97,26 +97,26 @@ describe('account invitation and reset lifecycle', () => {
 
   it('rejects duplicate active accounts and duplicate pending invitations', async () => {
     const activeDb = memoryDatabase()
-    activeDb.state.users.push({ id: 'viewer', email: 'viewer@example.test', name: 'Viewer', role: 'NORMAL_VIEWER', isActive: true })
-    await expect(createUserService(activeDb).invite({ email: 'VIEWER@example.test', name: 'Duplicate', role: 'VIP_VIEWER' }, 'admin-1'))
+    activeDb.state.users.push({ id: 'viewer', email: 'viewer@example.test', name: 'Viewer', role: 'VIEWER', clearance: 'V4', permissionVersion: 0, isActive: true })
+    await expect(createUserService(activeDb).invite({ email: 'VIEWER@example.test', name: 'Duplicate', role: 'VIEWER', clearance: 'V2', permissionVersion: 0 }, 'admin-1'))
       .rejects.toMatchObject({ code: 'ACCOUNT_ALREADY_EXISTS' })
 
     const pendingDb = memoryDatabase()
     const pendingService = createUserService(pendingDb)
-    await pendingService.invite({ email: 'pending@example.test', name: 'Pending Viewer', role: 'NORMAL_VIEWER' }, 'admin-1')
-    await expect(pendingService.invite({ email: 'pending@example.test', name: 'Pending Viewer', role: 'NORMAL_VIEWER' }, 'admin-1'))
+    await pendingService.invite({ email: 'pending@example.test', name: 'Pending Viewer', role: 'VIEWER', clearance: 'V4', permissionVersion: 0 }, 'admin-1')
+    await expect(pendingService.invite({ email: 'pending@example.test', name: 'Pending Viewer', role: 'VIEWER', clearance: 'V4', permissionVersion: 0 }, 'admin-1'))
       .rejects.toMatchObject({ code: 'INVITATION_ALREADY_PENDING' })
   })
 
   it('rejects cancelled and expired setup links', async () => {
     const db = memoryDatabase()
     const service = createUserService(db)
-    const cancelled = await service.invite({ email: 'cancelled@example.test', name: 'Cancelled Viewer', role: 'NORMAL_VIEWER' }, 'admin-1')
+    const cancelled = await service.invite({ email: 'cancelled@example.test', name: 'Cancelled Viewer', role: 'VIEWER', clearance: 'V4', permissionVersion: 0 }, 'admin-1')
     const cancelledToken = new URL(cancelled.setupUrl).searchParams.get('token')
     await service.cancelInvite(cancelled.invitation.id, 'admin-1')
     await expect(service.validateSetup(cancelledToken)).rejects.toMatchObject({ code: 'INVALID_ACCOUNT_LINK' })
 
-    const expired = await service.invite({ email: 'expired@example.test', name: 'Expired Viewer', role: 'VIP_VIEWER' }, 'admin-1')
+    const expired = await service.invite({ email: 'expired@example.test', name: 'Expired Viewer', role: 'VIEWER', clearance: 'V2', permissionVersion: 0 }, 'admin-1')
     const expiredToken = new URL(expired.setupUrl).searchParams.get('token')
     const expiredRow = db.state.invites.find(item => item.id === expired.invitation.id)
     expiredRow.expiresAt = new Date(Date.now() - 1000)
@@ -126,7 +126,7 @@ describe('account invitation and reset lifecycle', () => {
   it('rotates setup links and accepts an invitation only once', async () => {
     const db = memoryDatabase()
     const service = createUserService(db)
-    const first = await service.invite({ email: 'viewer@example.test', name: 'Viewer', role: 'VIP_VIEWER' }, 'admin-1')
+    const first = await service.invite({ email: 'viewer@example.test', name: 'Viewer', role: 'VIEWER', clearance: 'V2', permissionVersion: 0 }, 'admin-1')
     const firstToken = new URL(first.setupUrl).searchParams.get('token')
     expect(db.state.invites[0].tokenHash).toBe(hashAccountToken(firstToken))
     expect(db.state.users).toHaveLength(0)
@@ -137,23 +137,23 @@ describe('account invitation and reset lifecycle', () => {
     await expect(service.validateSetup(nextToken)).resolves.toMatchObject({ email: 'viewer@example.test' })
 
     const user = await service.completeSetup(nextToken, 'Strong-password-2026')
-    expect(user.role).toBe('VIP_VIEWER')
+    expect(user.role).toBe('VIEWER')
     expect(await bcrypt.compare('Strong-password-2026', db.state.users[0].passwordHash)).toBe(true)
     await expect(service.completeSetup(nextToken, 'Another-password-2026')).rejects.toMatchObject({ code: 'INVALID_ACCOUNT_LINK' })
   })
 
   it('protects the Main Admin from demotion, disablement, and reset', async () => {
     const db = memoryDatabase()
-    db.state.users.push({ id: 'primary', email: 'admin@example.test', name: 'Main Admin', role: 'ADMIN', isActive: true, isPrimaryAdmin: true })
+    db.state.users.push({ id: 'primary', email: 'admin@example.test', name: 'Main Admin', role: 'ADMIN', clearance: 'V1', permissionVersion: 0, isActive: true, isPrimaryAdmin: true })
     const service = createUserService(db)
-    await expect(service.update('primary', { role: 'VIP_VIEWER' }, 'other-admin')).rejects.toMatchObject({ code: 'PRIMARY_ADMIN_PROTECTED' })
-    await expect(service.update('primary', { isActive: false }, 'other-admin')).rejects.toMatchObject({ code: 'PRIMARY_ADMIN_PROTECTED' })
-    await expect(service.resetLogin('primary', 'other-admin')).rejects.toMatchObject({ code: 'PRIMARY_ADMIN_PROTECTED' })
+    await expect(service.update('primary', { role: 'VIEWER', clearance: 'V2', permissionVersion: 0 }, 'other-admin')).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(service.update('primary', { isActive: false }, 'other-admin')).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(service.resetLogin('primary', 'other-admin')).rejects.toMatchObject({ code: 'NOT_FOUND' })
   })
 
   it('rotates reset links, revokes sessions, and consumes the reset token once', async () => {
     const db = memoryDatabase()
-    db.state.users.push({ id: 'viewer', email: 'viewer@example.test', name: 'Viewer', role: 'NORMAL_VIEWER', isActive: true, isPrimaryAdmin: false, passwordHash: await bcrypt.hash('Old-password-2026', 4) })
+    db.state.users.push({ id: 'viewer', email: 'viewer@example.test', name: 'Viewer', role: 'VIEWER', clearance: 'V4', permissionVersion: 0, isActive: true, isPrimaryAdmin: false, passwordHash: await bcrypt.hash('Old-password-2026', 4) })
     db.state.refreshTokens.push({ id: 'session-1', userId: 'viewer', revokedAt: null })
     const service = createUserService(db)
     const first = await service.resetLogin('viewer', 'admin-1')

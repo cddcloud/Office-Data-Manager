@@ -10,7 +10,7 @@ export const treeQuerySchema = z.object({
 })
 
 export const idParamSchema = z.object({ id })
-export const createCategorySchema = z.object({ name, description, parentId: id.nullable().optional(), sortOrder: z.number().int().min(0).max(100000).optional() })
-export const updateCategorySchema = z.object({ name: name.optional(), description, sortOrder: z.number().int().min(0).max(100000).optional() }).refine(value => Object.keys(value).length > 0, 'At least one field is required')
+export const createCategorySchema = z.object({ name, description, accessLevel: z.enum(['V1', 'V2', 'V3', 'V4']).default('V4'), parentId: id.nullable().optional(), sortOrder: z.number().int().min(0).max(100000).optional() })
+export const updateCategorySchema = z.object({ name: name.optional(), description, accessLevel: z.enum(['V1', 'V2', 'V3', 'V4']).optional(), sortOrder: z.number().int().min(0).max(100000).optional() }).refine(value => Object.keys(value).length > 0, 'At least one field is required')
 export const moveCategorySchema = z.object({ parentId: id.nullable() })
 

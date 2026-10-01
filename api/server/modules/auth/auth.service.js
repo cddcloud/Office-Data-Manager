@@ -3,12 +3,15 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { DomainError } from '../../lib/errors.js'
 import { createAuditService } from '../../lib/audit.js'
+import { authUserSelect, authUserValue, findAuthUser, missingWorkflowSchema } from './auth-user.js'
 
 const publicUser = user => ({
   id: user.id,
   email: user.email,
   name: user.name,
   role: user.role,
+  clearance: user.clearance,
+  workflowReady: user.workflowReady !== false,
   isActive: user.isActive,
   isPrimaryAdmin: user.isPrimaryAdmin,
   loginResetRequired: user.loginResetRequired,
@@ -28,7 +31,7 @@ function secret() {
 function accessToken(user) {
   const expiresIn = /** @type {import('jsonwebtoken').SignOptions['expiresIn']} */ (process.env.ACCESS_TOKEN_TTL || '15m')
   return jwt.sign(
-    { role: user.role, name: user.name, mustChangePassword: user.mustChangePassword },
+    { permissionVersion: user.permissionVersion, role: user.role, name: user.name, mustChangePassword: user.mustChangePassword },
     secret(),
     { subject: user.id, expiresIn, algorithm: 'HS256' },
   )
@@ -46,20 +49,22 @@ async function refreshToken(prisma, userId) {
 export function createAuthService(prisma) {
   return {
     async login({ email, password }) {
-      const user = await prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } })
+      const user = await findAuthUser(prisma, { email: email.trim().toLowerCase() })
       if (!user || !user.isActive || !await bcrypt.compare(password, user.passwordHash)) {
         throw new DomainError(401, 'INVALID_CREDENTIALS', 'Email or password is incorrect')
       }
       if (user.loginResetRequired) throw new DomainError(403, 'LOGIN_RESET_REQUIRED', 'Use the secure reset link before signing in again')
-      const updated = await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+      const updated = authUserValue(await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() }, select: authUserSelect(user.workflowReady) }), user.workflowReady)
       return { accessToken: accessToken(updated), refreshToken: await refreshToken(prisma, user.id), user: publicUser(updated) }
     },
 
     async refresh(rawToken) {
-      const session = await prisma.refreshToken.findUnique({
-        where: { tokenHash: tokenHash(rawToken) },
-        include: { user: true },
-      })
+      const readSession = ready => prisma.refreshToken.findUnique({ where: { tokenHash: tokenHash(rawToken) }, include: { user: { select: authUserSelect(ready) } } })
+      let ready = true
+      let session
+      try { session = await readSession(true) }
+      catch (error) { if (!missingWorkflowSchema(error)) throw error; ready = false; session = await readSession(false) }
+      if (session) session.user = authUserValue(session.user, ready)
       if (!session || session.revokedAt || session.expiresAt <= new Date() || !session.user.isActive || session.user.loginResetRequired) {
         throw new DomainError(401, 'INVALID_REFRESH_TOKEN', 'The refresh token is invalid or expired')
       }
@@ -80,18 +85,18 @@ export function createAuthService(prisma) {
     },
 
     async changePassword(userId, currentPassword, newPassword) {
-      const user = await prisma.user.findUnique({ where: { id: userId } })
+      const user = await findAuthUser(prisma, { id: userId })
       if (!user || !await bcrypt.compare(currentPassword, user.passwordHash)) {
         throw new DomainError(401, 'INVALID_CURRENT_PASSWORD', 'The current password is incorrect')
       }
       const passwordHash = await bcrypt.hash(newPassword, 12)
       const updated = await prisma.$transaction(async tx => {
-        const result = await tx.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false } })
+        const result = await tx.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false }, select: authUserSelect(user.workflowReady) })
         await tx.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } })
         await createAuditService(tx).record({ actorId: userId, action: 'USER_PASSWORD_CHANGED', entityType: 'User', entityId: userId })
         return result
       })
-      return publicUser(updated)
+      return publicUser(authUserValue(updated, user.workflowReady))
     },
 
     publicUser,

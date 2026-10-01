@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client'
-import { allowedAccessLevels } from '../../lib/access.js'
+import { allowedAccessLevels, assertInputLevel, authorizedCategoryIds, collectionWhere, resolveActor } from '../../lib/access.js'
 import { createAuditService } from '../../lib/audit.js'
 import { DomainError, notFound } from '../../lib/errors.js'
 import { validateRecordPayload } from '../data/data.validation.js'
@@ -34,15 +34,17 @@ function filterSql(widget) {
   return entries.map(([key, value]) => Prisma.sql`dr."payload" ->> ${key} = ${String(value)}`)
 }
 
-export async function aggregateWidget(prisma, widget, role) {
-  const levels = allowedAccessLevels(role)
+export async function aggregateWidget(prisma, widget, role, level) {
+  const levels = allowedAccessLevels(role).filter(value => !level || value === level)
+  const ids = await authorizedCategoryIds(prisma, role)
+  if (!levels.length || !ids.length) return widget.chartType === 'KPI' ? { value: 0 } : { series: [] }
   const access = Prisma.join(levels.map(level => Prisma.sql`${level}::"AccessLevel"`))
   const clauses = [
     Prisma.sql`dr."dataCollectionId" = ${widget.dataCollectionId}`,
     Prisma.sql`dr."archivedAt" IS NULL`,
     Prisma.sql`dr."accessLevel" IN (${access})`,
-    ...(role === 'ADMIN' ? [] : [Prisma.sql`EXISTS (SELECT 1 FROM "DataCollection" dc WHERE dc."id" = dr."dataCollectionId" AND dc."archivedAt" IS NULL AND dc."defaultAccessLevel" IN (${access}))`]),
-    ...(role === 'ADMIN' ? [] : [Prisma.sql`EXISTS (SELECT 1 FROM "Category" cat WHERE cat."id" = dr."categoryId" AND cat."archivedAt" IS NULL)`]),
+    Prisma.sql`EXISTS (SELECT 1 FROM "DataCollection" dc WHERE dc."id" = dr."dataCollectionId" AND dc."archivedAt" IS NULL AND dc."defaultAccessLevel" IN (${access}) AND dc."categoryId" IN (${Prisma.join(ids)}))`,
+    Prisma.sql`dr."categoryId" IN (${Prisma.join(ids)})`,
     ...filterSql(widget),
   ]
   const where = Prisma.join(clauses, ' AND ')
@@ -66,23 +68,25 @@ export async function aggregateWidget(prisma, widget, role) {
 }
 
 export function createDashboardService(prisma) {
-  async function fieldsForCollection(id) {
-    const collection = await prisma.dataCollection.findFirst({ where: { id, archivedAt: null }, include: { fields: true } })
+  async function fieldsForCollection(id, actor) {
+    const collection = await prisma.dataCollection.findFirst({ where: { id, ...await collectionWhere(prisma, actor) }, include: { fields: true } })
     if (!collection) throw notFound('Data collection')
     return collection.fields
   }
-  async function widget(id, includeArchived = false) {
-    const value = await prisma.dashboardWidget.findFirst({ where: { id, ...(includeArchived ? {} : { archivedAt: null, dataCollection: { archivedAt: null } }) }, include: includeDefinition })
+  async function widget(id, actor, includeArchived = false) {
+    const value = await prisma.dashboardWidget.findFirst({ where: { id, accessLevel: { in: allowedAccessLevels(actor) }, dataCollection: await collectionWhere(prisma, actor, includeArchived), ...(includeArchived ? {} : { archivedAt: null }) }, include: includeDefinition })
     if (!value) throw notFound('Dashboard widget')
     return value
   }
   return {
-    listAdmin(dataCollectionId) {
-      return prisma.dashboardWidget.findMany({ where: { archivedAt: null, dataCollection: { archivedAt: null }, ...(dataCollectionId ? { dataCollectionId } : {}) }, include: includeDefinition, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] })
+    async listAdmin(dataCollectionId, actor) {
+      return prisma.dashboardWidget.findMany({ where: { archivedAt: null, accessLevel: { in: allowedAccessLevels(actor) }, dataCollection: await collectionWhere(prisma, actor), ...(dataCollectionId ? { dataCollectionId } : {}) }, include: includeDefinition, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] })
     },
     get: widget,
     async create(input, actorId) {
-      const { savedFilters } = validateWidgetConfiguration(input, await fieldsForCollection(input.dataCollectionId))
+      const actor = await resolveActor(prisma, actorId)
+      assertInputLevel(actor, input.accessLevel)
+      const { savedFilters } = validateWidgetConfiguration(input, await fieldsForCollection(input.dataCollectionId, actor))
       return prisma.$transaction(async tx => {
         const created = await tx.dashboardWidget.create({ data: { ...input, savedFilters, createdById: actorId, updatedById: actorId }, include: includeDefinition })
         await createAuditService(tx).record({ actorId, action: 'DASHBOARD_WIDGET_CREATED', entityType: 'DashboardWidget', entityId: created.id, after: created })
@@ -90,9 +94,11 @@ export function createDashboardService(prisma) {
       })
     },
     async update(id, input, actorId) {
-      const before = await widget(id, true)
+      const actor = await resolveActor(prisma, actorId)
+      const before = await widget(id, actor, true)
+      if (input.accessLevel) assertInputLevel(actor, input.accessLevel, before.accessLevel)
       const proposed = { ...before, ...input }
-      const { savedFilters } = validateWidgetConfiguration(proposed, await fieldsForCollection(proposed.dataCollectionId))
+      const { savedFilters } = validateWidgetConfiguration(proposed, await fieldsForCollection(proposed.dataCollectionId, actor))
       return prisma.$transaction(async tx => {
         const data = Object.hasOwn(input, 'savedFilters') ? { ...input, savedFilters } : input
         const after = await tx.dashboardWidget.update({ where: { id }, data: { ...data, updatedById: actorId }, include: includeDefinition })
@@ -101,25 +107,27 @@ export function createDashboardService(prisma) {
       })
     },
     async archive(id, actorId) {
-      const before = await widget(id, true)
+      const actor = await resolveActor(prisma, actorId)
+      const before = await widget(id, actor, true)
       return prisma.$transaction(async tx => {
         const after = await tx.dashboardWidget.update({ where: { id }, data: { archivedAt: new Date(), isActive: false, updatedById: actorId }, include: includeDefinition })
         await createAuditService(tx).record({ actorId, action: 'DASHBOARD_WIDGET_ARCHIVED', entityType: 'DashboardWidget', entityId: id, before, after })
         return after
       })
     },
-    async preview(id, role = 'ADMIN') {
-      const selected = await widget(id)
+    async preview(id, role) {
+      const selected = await widget(id, role)
       return { widget: selected, data: await aggregateWidget(prisma, selected, role) }
     },
-    async previewConfiguration(input, role = 'ADMIN') {
-      const { dimension, measure, savedFilters } = validateWidgetConfiguration(input, await fieldsForCollection(input.dataCollectionId))
+    async previewConfiguration(input, actor) {
+      assertInputLevel(actor, input.accessLevel)
+      const { dimension, measure, savedFilters } = validateWidgetConfiguration(input, await fieldsForCollection(input.dataCollectionId, actor))
       const selected = { ...input, dimensionField: dimension, measureField: measure, savedFilters }
-      return { widget: selected, data: await aggregateWidget(prisma, selected, role) }
+      return { widget: selected, data: await aggregateWidget(prisma, selected, actor) }
     },
-    async viewerDashboard(role) {
-      const widgets = await prisma.dashboardWidget.findMany({ where: { archivedAt: null, isActive: true, dataCollection: { archivedAt: null, ...(role === 'ADMIN' ? {} : { defaultAccessLevel: { in: allowedAccessLevels(role) }, category: { archivedAt: null } }) }, accessLevel: { in: allowedAccessLevels(role) } }, include: includeDefinition, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] })
-      return Promise.all(widgets.map(async item => ({ widget: item, data: await aggregateWidget(prisma, item, role) })))
+    async viewerDashboard(role, level) {
+      const widgets = await prisma.dashboardWidget.findMany({ where: { archivedAt: null, isActive: true, dataCollection: await collectionWhere(prisma, role), accessLevel: { in: allowedAccessLevels(role) } }, include: includeDefinition, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] })
+      return Promise.all(widgets.map(async item => ({ widget: item, data: await aggregateWidget(prisma, item, role, level) })))
     },
   }
 }

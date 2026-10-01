@@ -11,12 +11,12 @@ export function categoryRoutes(prisma) {
 
   router.get('/', async (req, res) => {
     const query = treeQuerySchema.parse(req.query)
-    res.json({ data: await service.tree(query, req.user.role) })
+    res.json({ data: await service.tree(query, req.user) })
   })
 
   router.get('/:id', async (req, res) => {
     const { id } = idParamSchema.parse(req.params)
-    res.json({ data: await service.details(id, req.user.role) })
+    res.json({ data: await service.details(id, req.user) })
   })
 
   router.post('/', adminOnly, async (req, res) => {

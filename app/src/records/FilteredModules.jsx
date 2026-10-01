@@ -1,3 +1,4 @@
+import { useDialogFocus } from '../shared/useDialogFocus.js'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AddRounded from '@mui/icons-material/AddRounded'
 import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded'
@@ -17,6 +18,8 @@ import NavigateNextRounded from '@mui/icons-material/NavigateNextRounded'
 import SearchRounded from '@mui/icons-material/SearchRounded'
 import StorageRounded from '@mui/icons-material/StorageRounded'
 import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined'
+import { inputLevels, isContentAdmin } from '../shared/access.js'
+import '../shared/workflow.css'
 import { api, apiEnvelope } from '../api.js'
 import { useCategoryTree } from '../categories/category-queries.js'
 import { SemanticFileIcon } from '../shared/SemanticFileIcon.jsx'
@@ -25,7 +28,7 @@ import './filtered-modules.css'
 import './data-workspace.css'
 import './data-dashboard.css'
 
-const admin = () => JSON.parse(sessionStorage.getItem('office_user') || '{}').role === 'ADMIN'
+const admin = () => isContentAdmin(JSON.parse(sessionStorage.getItem('office_user') || '{}'))
 const formatDate = value => value ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value)) : '—'
 
 export function FolderTree({ nodes, selectedId, expanded, onToggle, onSelect, depth = 0 }) {
@@ -43,7 +46,8 @@ export function FolderTree({ nodes, selectedId, expanded, onToggle, onSelect, de
 }
 
 function Modal({ title, eyebrow, children, actions, onClose, wide = false }) {
-  return <div className="data-modal-backdrop" onMouseDown={event => event.target === event.currentTarget && onClose()}><section className={`data-modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true"><header><div>{eyebrow && <small>{eyebrow}</small>}<h2>{title}</h2></div><button onClick={onClose}><CloseRounded /></button></header><div className="data-modal-body">{children}</div>{actions && <footer>{actions}</footer>}</section></div>
+  const dialog = useDialogFocus(true, onClose)
+  return <div className="data-modal-backdrop" onMouseDown={event => event.target === event.currentTarget && onClose()}><section ref={dialog} tabIndex={-1} className={`data-modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}><header><div>{eyebrow && <small>{eyebrow}</small>}<h2>{title}</h2></div><button onClick={onClose}><CloseRounded /></button></header><div className="data-modal-body">{children}</div>{actions && <footer>{actions}</footer>}</section></div>
 }
 
 export function DynamicField({ field, value, onChange, disabled = false }) {
@@ -62,7 +66,7 @@ export function RecordDialog({ tree, initialCategory, initialCollection, record,
   const [folderSearch, setFolderSearch] = useState('')
   const [expanded, setExpanded] = useState(new Set(tree.map(item => item.id)))
   const [newFolder, setNewFolder] = useState('')
-  const [view, setView] = useState(record?.accessLevel || collection?.defaultAccessLevel || 'NORMAL')
+  const [view, setView] = useState(record?.accessLevel || collection?.defaultAccessLevel || 'V4')
   const [payload, setPayload] = useState(record?.payload || {})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -76,7 +80,7 @@ export function RecordDialog({ tree, initialCategory, initialCollection, record,
   }, [editing, folder?.id])
 
   async function createFolder() {
-    if (!newFolder.trim()) return
+    if (!newFolder.trim() || !folder?.id) return
     setBusy(true); setError('')
     try {
       const created = await api('/admin/categories', { method: 'POST', body: JSON.stringify({ name: newFolder.trim(), ...(folder?.id ? { parentId: folder.id } : {}) }) })
@@ -98,8 +102,8 @@ export function RecordDialog({ tree, initialCategory, initialCollection, record,
 
   const fields = collection?.fields || []
   return <Modal wide title={editing ? 'မှတ်တမ်းပြင်ဆင်ရန်' : 'Add New'} onClose={onClose} actions={<><button onClick={onClose}>Cancel</button><button className="primary" onClick={save} disabled={busy || !collection}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Add New'}</button></>}>
-    {!editing && step === 'location' && <div className="data-location-picker"><div className="data-picker-tree"><label><SearchRounded /><input value={folderSearch} onChange={event => setFolderSearch(event.target.value)} placeholder="Folder ရှာရန်…" /></label><div><FolderTree nodes={filteredTree} selectedId={folder?.id} expanded={expanded} onToggle={id => setExpanded(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next })} onSelect={node => { setFolder(node); setCollection(null) }} /></div><div className="data-new-folder"><input value={newFolder} onChange={event => setNewFolder(event.target.value)} placeholder="Folder အသစ်အမည်" /><button onClick={createFolder} disabled={busy || !newFolder.trim()}><CreateNewFolderOutlined />New Folder</button></div></div><div className="data-picker-files"><h3>Data File</h3>{folder ? collections.map(item => <button key={item.id} className={collection?.id === item.id ? 'selected' : ''} onClick={() => { setCollection(item); setView(item.defaultAccessLevel); setPayload({}); setStep('form') }}><SemanticFileIcon type="DATA" /><span><b>{item.name}</b><small>{item._count?.records || 0} records · {item.fields?.length || 0} fields</small></span></button>) : <p>Folder တစ်ခုရွေးပါ</p>}{folder && !collections.length && <p>ဤ Folder တွင် Structured Data မရှိသေးပါ</p>}</div></div>}
-    {(editing || step === 'form') && collection && <div className="data-record-form"><label>View<select value={view} onChange={event => setView(event.target.value)}><option value="NORMAL">Normal</option><option value="VIP">VIP</option></select></label><div className="data-dynamic-fields">{fields.map(field => <DynamicField key={field.id} field={field} value={payload[field.key]} onChange={value => setPayload(current => ({ ...current, [field.key]: value }))} />)}</div></div>}
+    {!editing && step === 'location' && <div className="data-location-picker"><div className="data-picker-tree"><label><SearchRounded /><input value={folderSearch} onChange={event => setFolderSearch(event.target.value)} placeholder="Folder ရှာရန်…" /></label><div><FolderTree nodes={filteredTree} selectedId={folder?.id} expanded={expanded} onToggle={id => setExpanded(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next })} onSelect={node => { setFolder(node); setCollection(null) }} /></div><div className="data-new-folder"><input value={newFolder} onChange={event => setNewFolder(event.target.value)} placeholder="Folder အသစ်အမည်" /><button onClick={createFolder} disabled={busy || !newFolder.trim() || !folder?.id}><CreateNewFolderOutlined />New Folder</button></div></div><div className="data-picker-files"><h3>Data File</h3>{folder ? collections.map(item => <button key={item.id} className={collection?.id === item.id ? 'selected' : ''} onClick={() => { setCollection(item); setView(item.defaultAccessLevel); setPayload({}); setStep('form') }}><SemanticFileIcon type="DATA" /><span><b>{item.name}</b><small>{item._count?.records || 0} records · {item.fields?.length || 0} fields</small></span></button>) : <p>Folder တစ်ခုရွေးပါ</p>}{folder && !collections.length && <p>ဤ Folder တွင် Structured Data မရှိသေးပါ</p>}</div></div>}
+    {(editing || step === 'form') && collection && <div className="data-record-form"><label>View<select value={view} onChange={event => setView(event.target.value)}>{inputLevels(record?.accessLevel).map(level=><option key={level} value={level}>{level}</option>)}</select></label><div className="data-dynamic-fields">{fields.map(field => <DynamicField key={field.id} field={field} value={payload[field.key]} onChange={value => setPayload(current => ({ ...current, [field.key]: value }))} />)}</div></div>}
     {error && <p className="data-error">{error}</p>}
   </Modal>
 }
@@ -133,7 +137,7 @@ export function WidgetVisualization({ widget, data }) {
 
 export function DashboardDialog({ collection, widget = null, onClose, onSaved }) {
   const initial = widget || {}
-  const [form, setForm] = useState({ title: initial.title || `${collection.name} Dashboard`, chartType: initial.chartType || 'KPI', dimensionFieldId: initial.dimensionFieldId || '', measureFieldId: initial.measureFieldId || '', aggregation: initial.aggregation || 'COUNT', timeGrouping: initial.timeGrouping || 'MONTH', accessLevel: initial.accessLevel || 'NORMAL', sortOrder: initial.sortOrder || 0 })
+  const [form, setForm] = useState({ title: initial.title || `${collection.name} Dashboard`, chartType: initial.chartType || 'KPI', dimensionFieldId: initial.dimensionFieldId || '', measureFieldId: initial.measureFieldId || '', aggregation: initial.aggregation || 'COUNT', timeGrouping: initial.timeGrouping || 'MONTH', accessLevel: initial.accessLevel || 'V4', sortOrder: initial.sortOrder || 0 })
   const [preview, setPreview] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -163,7 +167,7 @@ export function DashboardDialog({ collection, widget = null, onClose, onSaved })
       <label>Calculation<select value={form.aggregation} onChange={event => { setPreview(null); set('aggregation', event.target.value) }}>{['COUNT', 'SUM', 'AVG', 'MIN', 'MAX'].map(item => <option key={item}>{item}</option>)}</select></label>
       {form.aggregation !== 'COUNT' && <label>Value<select value={form.measureFieldId} onChange={event => { setPreview(null); set('measureFieldId', event.target.value) }}><option value="">ရွေးချယ်ပါ</option>{choices.measures.map(field => <option key={field.id} value={field.id}>{field.label}</option>)}</select></label>}
       {form.chartType === 'LINE' && <label>Time Grouping<select value={form.timeGrouping} onChange={event => { setPreview(null); set('timeGrouping', event.target.value) }}>{['DAY', 'MONTH', 'QUARTER', 'YEAR'].map(item => <option key={item}>{item}</option>)}</select></label>}
-      <label>View<select value={form.accessLevel} onChange={event => set('accessLevel', event.target.value)}><option value="NORMAL">Normal</option><option value="VIP">VIP</option></select></label>
+      <label>Content level<select value={form.accessLevel} onChange={event => set('accessLevel', event.target.value)}>{inputLevels(widget?.accessLevel).map(level => <option key={level} value={level}>{level}</option>)}</select></label>
     </div>
     {validationError && <p className="data-widget-hint">{validationError}</p>}
     {preview && <div className="data-widget-preview"><WidgetVisualization widget={body()} data={preview.data} /></div>}
@@ -353,7 +357,7 @@ export function DataRecordsPage({ categoryId, dataCollectionId = null, onOpenCol
     {dialog?.type === 'widget' && <DashboardDialog collection={collection} widget={dialog.widget} onClose={closeDialog} onSaved={() => refreshDashboard(dialog.widget ? 'Widget updated successfully' : 'Widget added successfully')} />}
     {dialog?.type === 'delete-record' && <ConfirmDialog title="Delete this record?" message="Are you sure you want to delete this record? It will move to Recently Deleted." confirmLabel="Delete" onCancel={closeDialog} onConfirm={() => archiveRecord(dialog.record)} busy={actionBusy} />}
     {dialog?.type === 'delete-widget' && <ConfirmDialog title="Remove this widget?" message="The widget configuration will be removed from this data file dashboard." confirmLabel="Remove" onCancel={closeDialog} onConfirm={() => archiveWidget(dialog.widget)} busy={actionBusy} />}
-    {dialog?.type === 'details' && <Modal title={dialog.record.title} eyebrow="Record Details" onClose={closeDialog} actions={<button className="primary" onClick={closeDialog}>Done</button>}><dl className="data-details">{collection.fields.map(field => <div key={field.id}><dt>{field.label}</dt><dd>{String(dialog.record.payload[field.key] ?? '—')}</dd></div>)}<div><dt>Created</dt><dd>{formatDate(dialog.record.createdAt)}</dd></div><div><dt>Created By</dt><dd>{dialog.record.createdBy?.name || '—'}</dd></div><div><dt>Updated</dt><dd>{formatDate(dialog.record.updatedAt)}</dd></div><div><dt>Modified By</dt><dd>{dialog.record.updatedBy?.name || dialog.record.createdBy?.name || '—'}</dd></div><div><dt>Source</dt><dd>{dialog.record.sourceType === 'EXCEL' ? 'Excel' : 'Manual'}</dd></div><div><dt>View</dt><dd>{dialog.record.accessLevel === 'VIP' ? 'VIP' : 'Normal'}</dd></div></dl></Modal>}
+    {dialog?.type === 'details' && <Modal title={dialog.record.title} eyebrow="Record Details" onClose={closeDialog} actions={<button className="primary" onClick={closeDialog}>Done</button>}><dl className="data-details">{collection.fields.map(field => <div key={field.id}><dt>{field.label}</dt><dd>{String(dialog.record.payload[field.key] ?? '—')}</dd></div>)}<div><dt>Created</dt><dd>{formatDate(dialog.record.createdAt)}</dd></div><div><dt>Created By</dt><dd>{dialog.record.createdBy?.name || '—'}</dd></div><div><dt>Updated</dt><dd>{formatDate(dialog.record.updatedAt)}</dd></div><div><dt>Modified By</dt><dd>{dialog.record.updatedBy?.name || dialog.record.createdBy?.name || '—'}</dd></div><div><dt>Source</dt><dd>{dialog.record.sourceType === 'EXCEL' ? 'Excel' : 'Manual'}</dd></div><div><dt>View</dt><dd>{dialog.record.accessLevel}</dd></div></dl></Modal>}
     {dialog?.type === 'collection-details' && <Modal title={dialog.collection.name} eyebrow="Structured Data" onClose={closeDialog} actions={<button className="primary" onClick={closeDialog}>Done</button>}><dl className="data-details"><div><dt>Location</dt><dd>{breadcrumb.map(item => item.name).join(' / ')}</dd></div><div><dt>Records</dt><dd>{dialog.collection._count?.records || 0}</dd></div><div><dt>Fields</dt><dd>{dialog.collection.fields.map(field => field.label).join(', ')}</dd></div><div><dt>Last Updated</dt><dd>{formatDate(dialog.collection.updatedAt)}</dd></div></dl></Modal>}
     {notice && <div className="data-toast">{notice}</div>}
   </section>

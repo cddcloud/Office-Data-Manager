@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../server/app.js'
 
 const secret = 'integration-test-secret-value'
-const token = () => jwt.sign({ role: 'NORMAL_VIEWER', name: 'Viewer' }, secret, { subject: 'viewer-1' })
+const token = () => jwt.sign({ role: 'VIEWER', clearance: 'V4', permissionVersion: 0, name: 'Viewer' }, secret, { subject: 'viewer-1' })
 const rootId = 'cl00000000000000000000001'
 const childId = 'cl00000000000000000000002'
 const deepId = 'cl00000000000000000000003'
@@ -13,11 +13,11 @@ function persistence() {
   const calls = { dataWhere: null, documentWhere: null }
   return {
     calls,
-    user: { findUnique: async () => ({ id: 'viewer-1', email: 'viewer@example.test', role: 'NORMAL_VIEWER', name: 'Viewer', isActive: true, mustChangePassword: false }) },
-    category: { findFirst: async () => ({ id: rootId }) },
+    user: { findUnique: async () => ({ id: 'viewer-1', email: 'viewer@example.test', role: 'VIEWER', clearance: 'V4', permissionVersion: 0, name: 'Viewer', isActive: true, mustChangePassword: false }) },
+    category: { findFirst: async () => ({ id: rootId }),findMany:async()=>[rootId,childId,deepId].map(id=>({id,parentId:null,accessLevel:'V4',archivedAt:null})) },
     $queryRaw: async () => [{ id: rootId }, { id: childId }, { id: deepId }],
-    dataRecord: { findMany: async ({ where }) => { calls.dataWhere = where; return [{ id: 'data-1', categoryId: deepId }] } },
-    document: { findMany: async ({ where }) => { calls.documentWhere = where; return [{ id: 'doc-1', categoryId: childId }] } },
+    dataRecord: {count:async()=>1, findMany: async ({ where }) => { calls.dataWhere = where; return [{ id: 'data-1', categoryId: deepId }] } },
+    document: {count:async()=>1, findMany: async ({ where }) => { calls.documentWhere = where; return [{ id: 'doc-1', categoryId: childId }] } },
   }
 }
 

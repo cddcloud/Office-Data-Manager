@@ -12,7 +12,7 @@ const dashboardCss = fs.readFileSync(path.resolve(process.cwd(), 'src/records/da
 
 describe('Data workspace frontend', () => {
   const tree = [{ id: 'finance', name: 'Finance', children: [{ id: 'budget', name: 'Budget', children: [] }] }, { id: 'hr', name: 'HR', children: [] }]
-  const collection = { id: 'collection-1', categoryId: 'budget', name: '2026 Budget', defaultAccessLevel: 'NORMAL', fields: [{ id: 'f1', key: 'department', label: 'Department', type: 'TEXT', required: true }, { id: 'f2', key: 'amount', label: 'Amount', type: 'NUMBER', required: true }, { id: 'f3', key: 'status', label: 'Status', type: 'ENUM', required: false, options: ['Approved', 'Pending'] }] }
+  const collection = { id: 'collection-1', categoryId: 'budget', name: '2026 Budget', defaultAccessLevel: 'V4', fields: [{ id: 'f1', key: 'department', label: 'Department', type: 'TEXT', required: true }, { id: 'f2', key: 'amount', label: 'Amount', type: 'NUMBER', required: true }, { id: 'f3', key: 'status', label: 'Status', type: 'ENUM', required: false, options: ['Approved', 'Pending'] }] }
 
   it('filters only the folder hierarchy while retaining matching ancestors', () => {
     expect(filterFolderTree(tree, 'budget').map(item => item.name)).toEqual(['Finance'])
@@ -93,8 +93,8 @@ describe('Data workspace frontend', () => {
   it('creates records through the existing unified DataRecord endpoint', async () => {
     globalThis.sessionStorage = { getItem: () => 'access-token' }
     globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ data: { id: 'record-1' } }) }))
-    await createRecordRequest({ title: 'Budget A', accessLevel: 'NORMAL', payload: { amount: 10 }, categoryId: 'budget', dataCollectionId: 'collection-1' })
-    expect(globalThis.fetch).toHaveBeenCalledWith('/api/admin/data', expect.objectContaining({ method: 'POST', body: JSON.stringify({ title: 'Budget A', accessLevel: 'NORMAL', payload: { amount: 10 }, categoryId: 'budget', dataCollectionId: 'collection-1' }) }))
+    await createRecordRequest({ title: 'Budget A', accessLevel: 'V4', payload: { amount: 10 }, categoryId: 'budget', dataCollectionId: 'collection-1' })
+    expect(globalThis.fetch).toHaveBeenCalledWith('/api/admin/data', expect.objectContaining({ method: 'POST', body: JSON.stringify({ title: 'Budget A', accessLevel: 'V4', payload: { amount: 10 }, categoryId: 'budget', dataCollectionId: 'collection-1' }) }))
   })
 
   it('navigates folders on a single click and keeps shared semantic file icons consistent', () => {
@@ -169,7 +169,7 @@ describe('Data workspace frontend', () => {
   it('builds smart widget fields, previews unsaved widgets, and scopes loading to one collection', async () => {
     expect(widgetFieldChoices(collection.fields, 'PIE').dimensions.map(field => field.id)).toEqual(['f1', 'f3'])
     expect(widgetFieldChoices([...collection.fields, { id: 'date', type: 'DATE' }], 'LINE').dimensions.map(field => field.id)).toEqual(['date'])
-    const body = widgetRequestBody({ title: ' Total ', chartType: 'KPI', dimensionFieldId: '', measureFieldId: '', aggregation: 'COUNT', timeGrouping: '', accessLevel: 'NORMAL', sortOrder: 0 }, collection.id)
+    const body = widgetRequestBody({ title: ' Total ', chartType: 'KPI', dimensionFieldId: '', measureFieldId: '', aggregation: 'COUNT', timeGrouping: '', accessLevel: 'V4', sortOrder: 0 }, collection.id)
     expect(body).toMatchObject({ title: 'Total', dataCollectionId: collection.id, chartType: 'KPI', measureFieldId: null })
     globalThis.sessionStorage = { getItem: () => 'access-token' }
     globalThis.fetch = vi.fn(async url => ({ ok: true, json: async () => url.includes('/preview') ? { data: { data: { value: 9 } } } : { data: [{ id: 'widget-1', dataCollectionId: collection.id }] } }))
@@ -184,7 +184,7 @@ describe('Data workspace frontend', () => {
   it('uses existing widget create, edit, archive, and reorder endpoints', async () => {
     globalThis.sessionStorage = { getItem: () => 'access-token' }
     globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ data: { id: 'saved' } }) }))
-    const body = widgetRequestBody({ title: 'Total', chartType: 'KPI', dimensionFieldId: '', measureFieldId: '', aggregation: 'COUNT', timeGrouping: '', accessLevel: 'NORMAL', sortOrder: 0 }, collection.id)
+    const body = widgetRequestBody({ title: 'Total', chartType: 'KPI', dimensionFieldId: '', measureFieldId: '', aggregation: 'COUNT', timeGrouping: '', accessLevel: 'V4', sortOrder: 0 }, collection.id)
     await saveDashboardWidget(body)
     await saveDashboardWidget(body, 'widget-1')
     await archiveDashboardWidget('widget-1')
@@ -203,9 +203,10 @@ describe('Data workspace frontend', () => {
     expect(menu).toContain('Details')
     expect(menu).toContain('Delete')
     expect(menu).not.toContain('>View<')
-    const editor = renderToStaticMarkup(<RecordDialog tree={tree} initialCategory={tree[0].children[0]} initialCollection={collection} record={{ id: 'record-1', title: 'Budget row', accessLevel: 'VIP', payload: { department: 'Finance', amount: 10 } }} onClose={() => {}} onSaved={() => {}} refreshTree={async () => {}} />)
+    vi.stubGlobal('sessionStorage',{getItem:key=>key==='office_user'?JSON.stringify({role:'ADMIN',clearance:'V1'}):null})
+    const editor = renderToStaticMarkup(<RecordDialog tree={tree} initialCategory={tree[0].children[0]} initialCollection={collection} record={{ id: 'record-1', title: 'Budget row', accessLevel: 'V2', payload: { department: 'Finance', amount: 10 } }} onClose={() => {}} onSaved={() => {}} refreshTree={async () => {}} />)
     expect(editor).toContain('value="Finance"')
-    expect(editor).toContain('<option value="VIP" selected="">VIP</option>')
+    expect(editor).toContain('<option value="V2" selected="">V2</option>')
     const confirmation = renderToStaticMarkup(<ConfirmDialog title="Delete this record?" message="Are you sure you want to delete this record?" confirmLabel="Delete" onCancel={() => {}} onConfirm={() => {}} busy={false} />)
     expect(confirmation).toContain('Delete this record?')
     expect(confirmation).toContain('Are you sure')
@@ -219,7 +220,7 @@ describe('Data workspace frontend', () => {
     expect(onMenu).toHaveBeenCalledWith(expect.any(Object), record, { right: 10, bottom: 20 })
     globalThis.sessionStorage = { getItem: () => 'access-token' }
     globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ data: record }) }))
-    await updateRecordRequest(record.id, { title: record.title, payload: record.payload, accessLevel: 'NORMAL' })
+    await updateRecordRequest(record.id, { title: record.title, payload: record.payload, accessLevel: 'V4' })
     await archiveRecordRequest(record.id)
     expect(globalThis.fetch).toHaveBeenCalledWith('/api/admin/data/record-1', expect.objectContaining({ method: 'PATCH' }))
     expect(globalThis.fetch).toHaveBeenCalledWith('/api/admin/data/record-1/archive', expect.objectContaining({ method: 'POST' }))
@@ -234,7 +235,7 @@ describe('Data workspace frontend', () => {
     expect(editor).toContain('Add Widget')
     expect(editor).toContain('Preview')
     expect(editor).toContain('Widget Type')
-    expect(editor).toContain('View')
+    expect(editor).toContain('Content level')
     for (const chartType of ['KPI', 'PIE', 'BAR', 'LINE']) expect(editor).toContain(`>${chartType}</option>`)
     expect(editor).not.toContain('CATEGORY_SUMMARY')
     const valid = { title: 'Records', chartType: 'KPI', aggregation: 'COUNT', dimensionFieldId: '', measureFieldId: '' }

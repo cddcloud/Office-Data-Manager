@@ -3,6 +3,8 @@ import { apiBlob, apiEnvelope } from '../api.js'
 import { WidgetVisualization } from '../records/FilteredModules.jsx'
 import { loadViewerItems, loadViewerOverview } from './viewer-data.js'
 import './viewer-dashboard.css'
+import { useDialogFocus } from '../shared/useDialogFocus.js'
+import PdfPreview from '../shared/PdfPreview.jsx'
 
 function flattenCategories(nodes, depth = 0) {
   return nodes.flatMap(node => [{ ...node, depth }, ...flattenCategories(node.children || [], depth + 1)])
@@ -12,7 +14,8 @@ function branchIds(node) {
   return node ? new Set([node.id, ...(node.children || []).flatMap(child => [...branchIds(child)])]) : null
 }
 
-function DocumentPreview({ document, onClose }) {
+export function DocumentPreview({ document, onClose }) {
+  const dialog = useDialogFocus(true, onClose)
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
   useEffect(() => {
@@ -25,9 +28,9 @@ function DocumentPreview({ document, onClose }) {
     }).catch(failure => active && setError(failure.message))
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [document.id])
-  return <div className="viewer-preview-backdrop" onClick={onClose}><section className="viewer-preview" role="dialog" aria-modal="true" aria-label={document.title} onClick={event => event.stopPropagation()}>
+  return <div className="viewer-preview-backdrop" onClick={onClose}><section ref={dialog} tabIndex={-1} className="viewer-preview" role="dialog" aria-modal="true" aria-label={document.title} onClick={event => event.stopPropagation()}>
     <header><div><small>{document.mimeType === 'application/pdf' ? 'PDF' : 'JPG'}</small><h2>{document.title}</h2></div><button onClick={onClose} aria-label="Close document">×</button></header>
-    {error ? <p className="viewer-error">{error}</p> : url ? document.mimeType === 'application/pdf' ? <iframe title={document.title} src={url} /> : <img src={url} alt={document.title} /> : <p>Loading document…</p>}
+    {error ? <p className="viewer-error">{error}</p> : url ? document.mimeType === 'application/pdf' ? <PdfPreview title={document.title} url={url} /> : <img src={url} alt={document.title} /> : <p>Loading document…</p>}
   </section></div>
 }
 

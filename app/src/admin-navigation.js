@@ -3,5 +3,6 @@ export const adminNavigation = [
   ['categories', 'File Manager', '✣'],
   ['entry', 'ဒေတာများ', '▦'],
   ['accounts', 'User & Access', '♟'],
-  ['preview', 'Dashboard', '▥'],
+  ['dashboard', 'Dashboard', '▥'],
+  ['preview', 'Demo / Design Reference', '▥'],
 ]
